@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
   fetchAccounts, fetchJournalEntries, fetchPeriods, fetchTransactionLock,
-  upsertAccount, upsertAccounts, upsertJournalEntry, deleteJournalEntry,
-  upsertPeriod, upsertPeriods, saveTransactionLock, clearTransactionLockDb,
+  upsertAccount, upsertJournalEntry, deleteJournalEntry,
+  upsertPeriod, saveTransactionLock, clearTransactionLockDb,
 } from '../lib/supabaseSync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -136,137 +136,8 @@ export interface ValidationWarning {
   message: string;
 }
 
-// ─── Default Data ─────────────────────────────────────────────────────────────
+// ─── Default Data (empty — all data comes from Supabase) ──────────────────────
 
-const DEFAULT_ACCOUNTS: Account[] = [
-  // Assets
-  { id: 'A1000', code: '1000', name: 'Cash',                   type: 'Asset',     normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 50000, openingBalanceType: 'Debit',  description: 'Petty cash and on-hand cash', createdAt: '2024-01-01' },
-  { id: 'A1100', code: '1100', name: 'Bank Account',            type: 'Asset',     normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 150000,openingBalanceType: 'Debit',  description: 'Primary bank account', createdAt: '2024-01-01' },
-  { id: 'A1200', code: '1200', name: 'Accounts Receivable',     type: 'Asset',     normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 45000, openingBalanceType: 'Debit',  description: 'Money owed by customers/agents', createdAt: '2024-01-01' },
-  { id: 'A1300', code: '1300', name: 'Inventory',               type: 'Asset',     normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 25000, openingBalanceType: 'Debit',  description: 'Tourism packages and tickets', createdAt: '2024-01-01' },
-  { id: 'A1400', code: '1400', name: 'Prepaid Expenses',        type: 'Asset',     normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Advance payments', createdAt: '2024-01-01' },
-  { id: 'A1500', code: '1500', name: 'Fixed Assets',            type: 'Asset',     normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 200000,openingBalanceType: 'Debit',  description: 'Vehicles, equipment, furniture', createdAt: '2024-01-01' },
-  { id: 'A1600', code: '1600', name: 'Accumulated Depreciation',type: 'Asset',     normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 15000, openingBalanceType: 'Credit', description: 'Contra asset for fixed assets', createdAt: '2024-01-01' },
-  // Liabilities
-  { id: 'L2000', code: '2000', name: 'Accounts Payable',        type: 'Liability', normalBalance: 'Credit', isDefault: true, status: 'Active', openingBalance: 32000, openingBalanceType: 'Credit', description: 'Money owed to suppliers', createdAt: '2024-01-01' },
-  { id: 'L2100', code: '2100', name: 'Accrued Expenses',        type: 'Liability', normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 8000,  openingBalanceType: 'Credit', description: 'Expenses incurred not yet paid', createdAt: '2024-01-01' },
-  { id: 'L2200', code: '2200', name: 'VAT Payable',             type: 'Liability', normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 5000,  openingBalanceType: 'Credit', description: 'VAT collected, owed to FTA', createdAt: '2024-01-01' },
-  { id: 'L2300', code: '2300', name: 'Unearned Revenue',        type: 'Liability', normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Credit', description: 'Advance bookings received', createdAt: '2024-01-01' },
-  // Equity
-  { id: 'E3000', code: '3000', name: 'Owner Equity',            type: 'Equity',    normalBalance: 'Credit', isDefault: true, status: 'Active', openingBalance: 500000,openingBalanceType: 'Credit', description: 'Owner capital', createdAt: '2024-01-01' },
-  { id: 'E3100', code: '3100', name: 'Retained Earnings',       type: 'Equity',    normalBalance: 'Credit', isDefault: true, status: 'Active', openingBalance: 25000, openingBalanceType: 'Credit', description: 'Accumulated profit', createdAt: '2024-01-01' },
-  { id: 'E3200', code: '3200', name: 'Drawings',                type: 'Equity',    normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Owner withdrawals', createdAt: '2024-01-01' },
-  // Revenue
-  { id: 'R4000', code: '4000', name: 'Sales Revenue',           type: 'Revenue',   normalBalance: 'Credit', isDefault: true, status: 'Active', openingBalance: 0,     openingBalanceType: 'Credit', description: 'Tour package revenue', createdAt: '2024-01-01' },
-  { id: 'R4100', code: '4100', name: 'Service Income',          type: 'Revenue',   normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Credit', description: 'Transfer, visa, activity income', createdAt: '2024-01-01' },
-  { id: 'R4200', code: '4200', name: 'Other Income',            type: 'Revenue',   normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Credit', description: 'Miscellaneous income', createdAt: '2024-01-01' },
-  { id: 'R4300', code: '4300', name: 'FX Gain',                 type: 'Revenue',   normalBalance: 'Credit', isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Credit', description: 'Foreign exchange gain', createdAt: '2024-01-01' },
-  // Expenses
-  { id: 'X5000', code: '5000', name: 'Office Expense',          type: 'Expense',   normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'General office costs', createdAt: '2024-01-01' },
-  { id: 'X5100', code: '5100', name: 'Salaries',                type: 'Expense',   normalBalance: 'Debit',  isDefault: true, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Employee salaries', createdAt: '2024-01-01' },
-  { id: 'X5200', code: '5200', name: 'Marketing',               type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Advertising and promotion', createdAt: '2024-01-01' },
-  { id: 'X5300', code: '5300', name: 'Travel & Transport',      type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Fuel and transport costs', createdAt: '2024-01-01' },
-  { id: 'X5400', code: '5400', name: 'Utilities',               type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Electricity, water, internet', createdAt: '2024-01-01' },
-  { id: 'X5500', code: '5500', name: 'Depreciation',            type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Periodic depreciation charge', createdAt: '2024-01-01' },
-  { id: 'X5600', code: '5600', name: 'Bank Charges',            type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Bank fees and service charges', createdAt: '2024-01-01' },
-  { id: 'X5700', code: '5700', name: 'FX Loss',                 type: 'Expense',   normalBalance: 'Debit',  isDefault: false, status: 'Active', openingBalance: 0,     openingBalanceType: 'Debit',  description: 'Foreign exchange loss', createdAt: '2024-01-01' },
-];
-
-const SEED_ENTRIES: JournalEntry[] = [
-  {
-    id: 'JE001', entryNumber: 'JE-2024-001', date: '2024-01-15', period: '2024-01',
-    description: 'Sales Revenue from Tour Package Booking', reference: 'BK-2024-0089',
-    status: 'Posted', source: 'Manual', createdBy: 'John Admin', createdAt: '2024-01-15T09:30:00Z',
-    postedAt: '2024-01-15T10:00:00Z', approvedBy: 'Sarah Manager', approvedAt: '2024-01-15T09:55:00Z',
-    totalDebit: 12500, totalCredit: 12500, isBalanced: true, attachments: [], auditLog: [
-      { id: 'A1', timestamp: '2024-01-15T09:30:00Z', userId: 'U1', userName: 'John Admin', action: 'Created', details: 'Journal entry created' },
-      { id: 'A2', timestamp: '2024-01-15T09:55:00Z', userId: 'U2', userName: 'Sarah Manager', action: 'Approved', details: 'Entry reviewed and approved' },
-      { id: 'A3', timestamp: '2024-01-15T10:00:00Z', userId: 'U2', userName: 'Sarah Manager', action: 'Posted', details: 'Posted to General Ledger' },
-    ],
-    lines: [
-      { id: 'L1', accountId: 'A1200', accountCode: '1200', accountName: 'Accounts Receivable', accountType: 'Asset',    description: 'Agent receivable - BK-2024-0089', debit: 12500, credit: 0 },
-      { id: 'L2', accountId: 'R4000', accountCode: '4000', accountName: 'Sales Revenue',        accountType: 'Revenue',  description: 'Tour package revenue',            debit: 0,     credit: 11905 },
-      { id: 'L3', accountId: 'L2200', accountCode: '2200', accountName: 'VAT Payable',          accountType: 'Liability',description: 'VAT 5%',                         debit: 0,     credit: 595 },
-    ]
-  },
-  {
-    id: 'JE002', entryNumber: 'JE-2024-002', date: '2024-01-18', period: '2024-01',
-    description: 'Office Rent Payment', reference: 'RENT-JAN-2024',
-    status: 'Posted', source: 'Manual', createdBy: 'John Admin', createdAt: '2024-01-18T14:20:00Z',
-    postedAt: '2024-01-18T15:00:00Z', approvedBy: 'Sarah Manager', approvedAt: '2024-01-18T14:50:00Z',
-    totalDebit: 8000, totalCredit: 8000, isBalanced: true, attachments: [], auditLog: [],
-    lines: [
-      { id: 'L1', accountId: 'X5000', accountCode: '5000', accountName: 'Office Expense', accountType: 'Expense', description: 'January 2024 rent',    debit: 8000, credit: 0 },
-      { id: 'L2', accountId: 'A1100', accountCode: '1100', accountName: 'Bank Account',   accountType: 'Asset',   description: 'Paid via bank transfer', debit: 0,    credit: 8000 },
-    ]
-  },
-  {
-    id: 'JE003', entryNumber: 'JE-2024-003', date: '2024-01-20', period: '2024-01',
-    description: 'Supplier Payment - City Hotel', reference: 'SUP-0056',
-    status: 'Posted', source: 'Payment', createdBy: 'admin', createdAt: '2024-01-20T10:15:00Z',
-    postedAt: '2024-01-20T11:00:00Z', approvedBy: 'Sarah Manager', approvedAt: '2024-01-20T10:50:00Z',
-    totalDebit: 4500, totalCredit: 4500, isBalanced: true, attachments: [], auditLog: [],
-    lines: [
-      { id: 'L1', accountId: 'L2000', accountCode: '2000', accountName: 'Accounts Payable', accountType: 'Liability', description: 'Clearing supplier payable', debit: 4500, credit: 0 },
-      { id: 'L2', accountId: 'A1000', accountCode: '1000', accountName: 'Cash',             accountType: 'Asset',     description: 'Cash paid to hotel',       debit: 0,    credit: 4500 },
-    ]
-  },
-  {
-    id: 'JE004', entryNumber: 'JE-2024-004', date: '2024-01-22', period: '2024-01',
-    description: 'Staff Salaries - January 2024', reference: 'PAY-JAN-2024',
-    status: 'Posted', source: 'Manual', createdBy: 'admin', createdAt: '2024-01-22T09:00:00Z',
-    postedAt: '2024-01-22T10:00:00Z', approvedBy: 'Sarah Manager', approvedAt: '2024-01-22T09:45:00Z',
-    totalDebit: 35000, totalCredit: 35000, isBalanced: true, attachments: [], auditLog: [],
-    lines: [
-      { id: 'L1', accountId: 'X5100', accountCode: '5100', accountName: 'Salaries',      accountType: 'Expense', description: 'January 2024 payroll', debit: 35000, credit: 0 },
-      { id: 'L2', accountId: 'A1100', accountCode: '1100', accountName: 'Bank Account',  accountType: 'Asset',   description: 'Bank transfer payroll', debit: 0,     credit: 35000 },
-    ]
-  },
-  {
-    id: 'JE005', entryNumber: 'JE-2024-005', date: '2024-02-05', period: '2024-02',
-    description: 'Tour Package Revenue - Feb batch', reference: 'BK-2024-BATCH-02',
-    status: 'Posted', source: 'Invoice', createdBy: 'system', createdAt: '2024-02-05T08:00:00Z',
-    postedAt: '2024-02-05T08:30:00Z', approvedBy: 'Sarah Manager', approvedAt: '2024-02-05T08:25:00Z',
-    totalDebit: 28500, totalCredit: 28500, isBalanced: true, attachments: [], auditLog: [],
-    lines: [
-      { id: 'L1', accountId: 'A1200', accountCode: '1200', accountName: 'Accounts Receivable', accountType: 'Asset',    description: 'Agent receivables Feb batch', debit: 28500, credit: 0 },
-      { id: 'L2', accountId: 'R4000', accountCode: '4000', accountName: 'Sales Revenue',        accountType: 'Revenue',  description: 'Feb package revenue',         debit: 0,     credit: 27143 },
-      { id: 'L3', accountId: 'L2200', accountCode: '2200', accountName: 'VAT Payable',          accountType: 'Liability',description: 'VAT 5%',                      debit: 0,     credit: 1357 },
-    ]
-  },
-  {
-    id: 'JE006', entryNumber: 'JE-2024-006', date: '2024-02-10', period: '2024-02',
-    description: 'Fuel Expense - Fleet Vehicles', reference: 'FUEL-FEB-2024',
-    status: 'Pending Approval', source: 'Manual', createdBy: 'Mike Sales', createdAt: '2024-02-10T11:00:00Z',
-    totalDebit: 2800, totalCredit: 2800, isBalanced: true, attachments: [], auditLog: [
-      { id: 'A1', timestamp: '2024-02-10T11:00:00Z', userId: 'U3', userName: 'Mike Sales', action: 'Created', details: 'Fuel expense entry created' },
-      { id: 'A2', timestamp: '2024-02-10T11:05:00Z', userId: 'U3', userName: 'Mike Sales', action: 'Submitted for Approval', details: 'Sent to finance team for review' },
-    ],
-    lines: [
-      { id: 'L1', accountId: 'X5300', accountCode: '5300', accountName: 'Travel & Transport', accountType: 'Expense', description: 'Fleet fuel - February', debit: 2800, credit: 0 },
-      { id: 'L2', accountId: 'A1000', accountCode: '1000', accountName: 'Cash',               accountType: 'Asset',   description: 'Cash paid at pump',    debit: 0,    credit: 2800 },
-    ]
-  },
-  {
-    id: 'JE007', entryNumber: 'JE-2024-007', date: '2024-02-15', period: '2024-02',
-    description: 'Marketing Campaign - Social Media', reference: 'MKT-FEB-2024',
-    status: 'Draft', source: 'Manual', createdBy: 'Mike Sales', createdAt: '2024-02-15T14:00:00Z',
-    totalDebit: 5000, totalCredit: 5000, isBalanced: true, attachments: [], auditLog: [],
-    lines: [
-      { id: 'L1', accountId: 'X5200', accountCode: '5200', accountName: 'Marketing',     accountType: 'Expense', description: 'Feb digital campaign', debit: 5000, credit: 0 },
-      { id: 'L2', accountId: 'L2000', accountCode: '2000', accountName: 'Accounts Payable', accountType: 'Liability', description: 'Agency payable',   debit: 0,    credit: 5000 },
-    ]
-  },
-];
-
-const SEED_PERIODS: AccountingPeriod[] = [
-  { id: 'P1', name: 'January 2024', period: '2024-01', startDate: '2024-01-01', endDate: '2024-01-31', status: 'Closed', closedBy: 'Sarah Manager', closedAt: '2024-02-05T10:00:00Z' },
-  { id: 'P2', name: 'February 2024', period: '2024-02', startDate: '2024-02-01', endDate: '2024-02-29', status: 'Open' },
-  { id: 'P3', name: 'March 2024', period: '2024-03', startDate: '2024-03-01', endDate: '2024-03-31', status: 'Open' },
-  { id: 'P4', name: 'April 2024', period: '2024-04', startDate: '2024-04-01', endDate: '2024-04-30', status: 'Open' },
-  { id: 'P5', name: 'May 2024', period: '2024-05', startDate: '2024-05-01', endDate: '2024-05-31', status: 'Open' },
-  { id: 'P6', name: 'June 2024', period: '2024-06', startDate: '2024-06-01', endDate: '2024-06-30', status: 'Open' },
-];
 
 // ─── Validation Engine ────────────────────────────────────────────────────────
 
@@ -546,18 +417,9 @@ const AccountingEngineContext = createContext<AccountingEngineContextType | null
 
 export function AccountingEngineProvider({ children }: { children: ReactNode }) {
   // ── Initial state from localStorage (instant) ──────────────────────────────
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    try { const s = localStorage.getItem('ae_accounts'); return s ? JSON.parse(s) : DEFAULT_ACCOUNTS; }
-    catch { return DEFAULT_ACCOUNTS; }
-  });
-  const [entries, setEntries] = useState<JournalEntry[]>(() => {
-    try { const s = localStorage.getItem('ae_entries'); return s ? JSON.parse(s) : SEED_ENTRIES; }
-    catch { return SEED_ENTRIES; }
-  });
-  const [periods, setPeriods] = useState<AccountingPeriod[]>(() => {
-    try { const s = localStorage.getItem('ae_periods'); return s ? JSON.parse(s) : SEED_PERIODS; }
-    catch { return SEED_PERIODS; }
-  });
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
   const [globalAuditLog, setGlobalAuditLog] = useState<AuditEvent[]>(() => {
     try { const s = localStorage.getItem('ae_audit'); return s ? JSON.parse(s) : []; }
     catch { return []; }
@@ -570,30 +432,13 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   // ── Load from Supabase on mount (overrides localStorage if data exists) ─────
   useEffect(() => {
     fetchAccounts().then(data => {
-      if (data && data.length > 0) {
-        setAccounts(data);
-        localStorage.setItem('ae_accounts', JSON.stringify(data));
-      } else if (data && data.length === 0) {
-        // Seed Supabase with defaults on first run
-        upsertAccounts(accounts);
-      }
+      if (data) setAccounts(data);
     });
     fetchJournalEntries().then(data => {
-      if (data && data.length > 0) {
-        setEntries(data);
-        localStorage.setItem('ae_entries', JSON.stringify(data));
-      } else if (data && data.length === 0) {
-        // Seed Supabase with existing localStorage entries
-        Promise.all(entries.map(e => upsertJournalEntry(e)));
-      }
+      if (data) setEntries(data);
     });
     fetchPeriods().then(data => {
-      if (data && data.length > 0) {
-        setPeriods(data);
-        localStorage.setItem('ae_periods', JSON.stringify(data));
-      } else if (data && data.length === 0) {
-        upsertPeriods(periods);
-      }
+      if (data) setPeriods(data);
     });
     fetchTransactionLock().then(lock => {
       if (lock) setTransactionLockState(lock);
@@ -601,15 +446,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Keep localStorage in sync (offline fallback) ───────────────────────────
-  useEffect(() => { localStorage.setItem('ae_accounts', JSON.stringify(accounts)); }, [accounts]);
-  useEffect(() => { localStorage.setItem('ae_entries', JSON.stringify(entries)); }, [entries]);
-  useEffect(() => { localStorage.setItem('ae_periods', JSON.stringify(periods)); }, [periods]);
-  useEffect(() => { localStorage.setItem('ae_audit', JSON.stringify(globalAuditLog)); }, [globalAuditLog]);
-  useEffect(() => {
-    if (transactionLock) localStorage.setItem('ae_txlock', JSON.stringify(transactionLock));
-    else localStorage.removeItem('ae_txlock');
-  }, [transactionLock]);
 
   // Derived state
   const ledger = buildLedger(entries, accounts);

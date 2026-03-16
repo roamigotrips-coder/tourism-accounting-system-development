@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { fetchEstimates, upsertEstimate, upsertEstimates } from '../lib/supabaseSync';
+import { fetchEstimates, upsertEstimate } from '../lib/supabaseSync';
 
 export type EstimateStatus = 'Pending Approval' | 'Approved' | 'Rejected' | 'Invoiced';
 
@@ -60,101 +60,12 @@ interface BookingEstimateContextType {
 const BookingEstimateContext = createContext<BookingEstimateContextType | null>(null);
 
 export function BookingEstimateProvider({ children }: { children: ReactNode }) {
-  const [estimates, setEstimates] = useState<BookingEstimate[]>([
-    {
-      id: 'EST-001',
-      bookingRef: 'BK-2024-0095',
-      agent: 'Global Tours UK',
-      customer: 'Smith Family',
-      serviceType: 'Tour Package',
-      serviceDate: '2024-03-15',
-      sellingPrice: 3500,
-      vat: 175,
-      total: 3675,
-      currency: 'AED',
-      paymentStatus: 'Pending',
-      notes: 'Desert Safari + City Tour combo package',
-      submittedAt: '2024-02-10T09:30:00Z',
-      submittedBy: 'Sales Team',
-      status: 'Pending Approval',
-      isTourPackage: true,
-      costing: {
-        hotel: 1800,
-        transfer: 400,
-        tickets: 600,
-        activities: 0,
-        guide: 0,
-        visa: 0,
-        other: 0,
-        notes: 'Hotel: Marriott Dubai, Transfer: City Transport Co',
-        totalCost: 2800,
-        profit: 700,
-        margin: 20,
-        costingFile: 'Package_Costing_EST001.xlsx',
-      },
-    },
-    {
-      id: 'EST-002',
-      bookingRef: 'BK-2024-0096',
-      agent: 'Euro Holidays',
-      customer: 'Mr. Carlos Ruiz',
-      serviceType: 'Hotel Booking',
-      serviceDate: '2024-03-20',
-      sellingPrice: 2200,
-      vat: 110,
-      total: 2310,
-      currency: 'AED',
-      paymentStatus: 'Pending',
-      notes: 'Business trip accommodation — 4 nights',
-      submittedAt: '2024-02-11T11:00:00Z',
-      submittedBy: 'Sales Team',
-      status: 'Pending Approval',
-    },
-    {
-      id: 'EST-003',
-      bookingRef: 'BK-2024-0090',
-      agent: 'Asia Travel Co',
-      customer: 'Chen Group',
-      serviceType: 'Tour Package',
-      serviceDate: '2024-02-28',
-      sellingPrice: 6800,
-      vat: 340,
-      total: 7140,
-      currency: 'AED',
-      paymentStatus: 'Paid',
-      notes: 'VIP Abu Dhabi tour',
-      submittedAt: '2024-02-05T14:00:00Z',
-      submittedBy: 'Sales Team',
-      status: 'Approved',
-      approvedBy: 'Finance Manager',
-      approvedAt: '2024-02-06T10:00:00Z',
-      isTourPackage: true,
-      costing: {
-        hotel: 3200,
-        transfer: 800,
-        tickets: 1200,
-        activities: 400,
-        guide: 300,
-        visa: 0,
-        other: 0,
-        notes: 'Premium hotel, private transfer',
-        totalCost: 5900,
-        profit: 900,
-        margin: 13.2,
-        costingFile: 'VIP_Abu_Dhabi_Costing.pdf',
-      },
-    },
-  ]);
+  const [estimates, setEstimates] = useState<BookingEstimate[]>([]);
 
   // ── Load from Supabase on mount ─────────────────────────────────────────────
   useEffect(() => {
     fetchEstimates().then(data => {
-      if (data && data.length > 0) {
-        setEstimates(data);
-      } else if (data && data.length === 0) {
-        // First run — seed Supabase with default estimates
-        upsertEstimates(estimates);
-      }
+      if (data) setEstimates(data);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
