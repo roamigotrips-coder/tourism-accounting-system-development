@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { CreditCard, Link2, CheckCircle, Clock, Send, Plus, X, Save, Copy } from 'lucide-react';
 import { payments, invoices } from '../data/mockData';
 
-const initialLinks = [
-  { id: 'PL-001', invoice: 'INV-001', party: 'Global Tours UK', amount: 15750, link: 'pay.touracco.com/PL001', status: 'Active', created: '2024-03-15' },
-  { id: 'PL-002', invoice: 'INV-004', party: 'Euro Holidays', amount: 23100, link: 'pay.touracco.com/PL002', status: 'Active', created: '2024-03-16' },
-  { id: 'PL-003', invoice: 'INV-007', party: 'Asia Travel Co', amount: 8925, link: 'pay.touracco.com/PL003', status: 'Paid', created: '2024-03-14' },
-];
+const initialLinks: { id: string; invoice: string; party: string; amount: number; link: string; status: string; created: string }[] = [];
 
 interface LinkForm {
   invoice: string;

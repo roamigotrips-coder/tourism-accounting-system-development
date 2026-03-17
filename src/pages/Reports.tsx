@@ -7,13 +7,7 @@ import { agents, suppliers } from '../data/mockData';
 import { useAccountingEngine } from '../context/AccountingEngine';
 
 // ── Tourism-specific data (not in GL) ────────────────────────────────────────
-const destinationData = [
-  { name: 'Dubai City',    revenue: 485000, bookings: 145 },
-  { name: 'Abu Dhabi',     revenue: 234000, bookings: 78  },
-  { name: 'Desert Safari', revenue: 189000, bookings: 210 },
-  { name: 'Sharjah',       revenue: 67000,  bookings: 34  },
-  { name: 'RAK',           revenue: 45000,  bookings: 22  },
-];
+const destinationData: { name: string; revenue: number; bookings: number }[] = [];
 
 const SERVICE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 

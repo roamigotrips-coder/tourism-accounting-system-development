@@ -23,28 +23,9 @@ interface ExchangeRate {
   created_at: string;
 }
 
-const DEFAULT_CURRENCIES: Currency[] = [
-  { id: '1', code: 'AED', name: 'UAE Dirham', symbol: 'د.إ', decimal_places: 2, is_base: true, status: 'active', created_at: '2024-01-01' },
-  { id: '2', code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '3', code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '4', code: 'GBP', name: 'British Pound', symbol: '£', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '5', code: 'SAR', name: 'Saudi Riyal', symbol: '﷼', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '6', code: 'INR', name: 'Indian Rupee', symbol: '₹', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '7', code: 'KWD', name: 'Kuwaiti Dinar', symbol: 'د.ك', decimal_places: 3, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '8', code: 'QAR', name: 'Qatari Riyal', symbol: 'ر.ق', decimal_places: 2, is_base: false, status: 'active', created_at: '2024-01-01' },
-  { id: '9', code: 'BHD', name: 'Bahraini Dinar', symbol: '.د.ب', decimal_places: 3, is_base: false, status: 'inactive', created_at: '2024-01-01' },
-  { id: '10', code: 'OMR', name: 'Omani Rial', symbol: 'ر.ع.', decimal_places: 3, is_base: false, status: 'inactive', created_at: '2024-01-01' },
-];
+const DEFAULT_CURRENCIES: Currency[] = [];
 
-const DEFAULT_RATES: ExchangeRate[] = [
-  { id: '1', currency_code: 'USD', rate: 3.6725, effective_date: '2024-01-15', source: 'central_bank', base_currency: 'AED', inverse_rate: 0.2723, created_at: '2024-01-15' },
-  { id: '2', currency_code: 'EUR', rate: 3.9950, effective_date: '2024-01-15', source: 'central_bank', base_currency: 'AED', inverse_rate: 0.2503, created_at: '2024-01-15' },
-  { id: '3', currency_code: 'GBP', rate: 4.6400, effective_date: '2024-01-15', source: 'central_bank', base_currency: 'AED', inverse_rate: 0.2155, created_at: '2024-01-15' },
-  { id: '4', currency_code: 'SAR', rate: 0.9793, effective_date: '2024-01-15', source: 'fixed', base_currency: 'AED', inverse_rate: 1.0211, created_at: '2024-01-15' },
-  { id: '5', currency_code: 'INR', rate: 0.0441, effective_date: '2024-01-15', source: 'api', base_currency: 'AED', inverse_rate: 22.6757, created_at: '2024-01-15' },
-  { id: '6', currency_code: 'KWD', rate: 11.95, effective_date: '2024-01-15', source: 'central_bank', base_currency: 'AED', inverse_rate: 0.0837, created_at: '2024-01-15' },
-  { id: '7', currency_code: 'QAR', rate: 1.0088, effective_date: '2024-01-15', source: 'fixed', base_currency: 'AED', inverse_rate: 0.9913, created_at: '2024-01-15' },
-];
+const DEFAULT_RATES: ExchangeRate[] = [];
 
 const DDL = `-- currencies table
 CREATE TABLE currencies (

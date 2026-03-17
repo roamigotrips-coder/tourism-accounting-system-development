@@ -8,12 +8,7 @@ interface MatchRule {
   action: 'auto_match'|'auto_reconcile'|'ignore'|'flag'; triggers: number;
 }
 
-const DEFAULT_RULES: MatchRule[] = [
-  { id: 'R1', name: 'Exact Reference + Amount', priority: 1, enabled: true, amountTolerance: 0, dateTolerance: 3, matchRef: true, matchDesc: false, minAmount: 0, maxAmount: 999999, direction: 'any', action: 'auto_match', triggers: 142 },
-  { id: 'R2', name: 'Amount Match ±3 Days', priority: 2, enabled: true, amountTolerance: 0, dateTolerance: 3, matchRef: false, matchDesc: false, minAmount: 0, maxAmount: 999999, direction: 'any', action: 'auto_match', triggers: 89 },
-  { id: 'R3', name: 'Bank Charges Auto-Ignore', priority: 3, enabled: true, amountTolerance: 5, dateTolerance: 7, matchRef: false, matchDesc: true, minAmount: 0, maxAmount: 500, direction: 'debit', action: 'ignore', triggers: 34 },
-  { id: 'R4', name: 'Agent Receipts', priority: 4, enabled: true, amountTolerance: 0, dateTolerance: 3, matchRef: false, matchDesc: true, minAmount: 1000, maxAmount: 999999, direction: 'credit', action: 'auto_reconcile', triggers: 67 },
-];
+const DEFAULT_RULES: MatchRule[] = [];
 
 const emptyRule: Omit<MatchRule,'id'|'triggers'> = {
   name: '', priority: 5, enabled: true, amountTolerance: 0, dateTolerance: 3,

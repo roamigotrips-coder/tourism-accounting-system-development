@@ -13,19 +13,9 @@ const PROVIDERS = [
 interface Connection { id: string; provider: string; name: string; accountNo: string; balance: number; status: 'connected'|'syncing'|'error'|'disconnected'; lastSync: string; autoMatch: boolean; }
 interface FeedTx { id: string; date: string; description: string; amount: number; type: 'credit'|'debit'; status: 'unmatched'|'matched'|'ignored'; provider: string; }
 
-const MOCK_CONNECTIONS: Connection[] = [
-  { id: 'C1', provider: 'Emirates NBD', name: 'Main Business Account', accountNo: '****4521', balance: 284500, status: 'connected', lastSync: '2 mins ago', autoMatch: true },
-  { id: 'C2', provider: 'ADCB', name: 'Payroll Account', accountNo: '****8834', balance: 45200, status: 'connected', lastSync: '15 mins ago', autoMatch: false },
-];
+const MOCK_CONNECTIONS: Connection[] = [];
 
-const MOCK_FEED_TXS: FeedTx[] = [
-  { id: 'FT1', date: '2024-06-10', description: 'AGENT PAYMENT - GLOBAL TOURS UK', amount: 12500, type: 'credit', status: 'matched', provider: 'Emirates NBD' },
-  { id: 'FT2', date: '2024-06-10', description: 'FUEL PAYMENT - ADNOC', amount: 850, type: 'debit', status: 'matched', provider: 'Emirates NBD' },
-  { id: 'FT3', date: '2024-06-09', description: 'MARRIOTT HOTELS UAE', amount: 22000, type: 'debit', status: 'unmatched', provider: 'Emirates NBD' },
-  { id: 'FT4', date: '2024-06-09', description: 'WIRE TRANSFER - EURO HOLIDAYS', amount: 8750, type: 'credit', status: 'unmatched', provider: 'ADCB' },
-  { id: 'FT5', date: '2024-06-08', description: 'OFFICE RENT - AL MAKTOUM BLDG', amount: 15000, type: 'debit', status: 'ignored', provider: 'Emirates NBD' },
-  { id: 'FT6', date: '2024-06-08', description: 'CUSTOMER PAYMENT - MR JAMES WILSON', amount: 5500, type: 'credit', status: 'unmatched', provider: 'ADCB' },
-];
+const MOCK_FEED_TXS: FeedTx[] = [];
 
 export default function BankFeeds() {
   const [tab, setTab] = useState<'overview'|'connections'|'transactions'|'rules'>('overview');

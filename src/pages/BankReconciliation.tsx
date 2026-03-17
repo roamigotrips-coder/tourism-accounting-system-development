@@ -37,67 +37,12 @@ interface FeedLog {
 }
 
 // ─── Mock Initial Data ─────────────────────────────────────────────────────────
-const initBankTx: BankTx[] = [
-  { id: 'BNK-001', date: '2024-03-01', description: 'Transfer from Global Tours UK', reference: 'REF-2024-001', debit: 0, credit: 15000, balance: 471000, status: 'Matched', matchedWith: 'BOOK-001', source: 'Import', bank: 'Emirates NBD' },
-  { id: 'BNK-002', date: '2024-03-03', description: 'Payment to Marriott Hotels UAE', reference: 'REF-2024-002', debit: 32000, credit: 0, balance: 439000, status: 'Matched', matchedWith: 'BOOK-002', source: 'Import', bank: 'Emirates NBD' },
-  { id: 'BNK-003', date: '2024-03-05', description: 'Card payment - Ahmed Hassan', reference: 'REF-2024-003', debit: 0, credit: 3675, balance: 442675, status: 'Matched', matchedWith: 'BOOK-003', source: 'Feed', bank: 'Emirates NBD' },
-  { id: 'BNK-004', date: '2024-03-08', description: 'Bank charges & fees', reference: 'REF-2024-004', debit: 250, credit: 0, balance: 442425, status: 'Unmatched', source: 'Feed', bank: 'Emirates NBD' },
-  { id: 'BNK-005', date: '2024-03-10', description: 'Transfer from Euro Holidays Ltd', reference: 'REF-2024-005', debit: 0, credit: 22000, balance: 464425, status: 'Partial', matchedWith: 'BOOK-004', source: 'Import', bank: 'Emirates NBD' },
-  { id: 'BNK-006', date: '2024-03-12', description: 'Office rent payment Mar 2024', reference: 'REF-2024-006', debit: 18000, credit: 0, balance: 446425, status: 'Matched', matchedWith: 'BOOK-005', source: 'Import', bank: 'ADCB' },
-  { id: 'BNK-007', date: '2024-03-14', description: 'Receipt from Asia Travel Co', reference: 'REF-2024-007', debit: 0, credit: 8500, balance: 454925, status: 'Unmatched', source: 'Feed', bank: 'ADCB' },
-  { id: 'BNK-008', date: '2024-03-15', description: 'Salary payment - Drivers March', reference: 'REF-2024-008', debit: 15000, credit: 0, balance: 439925, status: 'Matched', matchedWith: 'BOOK-006', source: 'Feed', bank: 'Emirates NBD' },
-  { id: 'BNK-009', date: '2024-03-17', description: 'Marketing expenses Google Ads', reference: 'REF-2024-009', debit: 5000, credit: 0, balance: 434925, status: 'Unmatched', source: 'Manual', bank: 'Emirates NBD' },
-  { id: 'BNK-010', date: '2024-03-19', description: 'Desert Safari LLC payment', reference: 'REF-2024-010', debit: 18000, credit: 0, balance: 416925, status: 'Matched', matchedWith: 'BOOK-007', source: 'Import', bank: 'FAB' },
-  { id: 'BNK-011', date: '2024-03-21', description: 'VAT payment FTA', reference: 'VAT-Q1-2024', debit: 12500, credit: 0, balance: 404425, status: 'Partial', matchedWith: 'BOOK-010', source: 'Manual', bank: 'Emirates NBD' },
-  { id: 'BNK-012', date: '2024-03-23', description: 'Customer refund - Cancelled tour', reference: 'REF-2024-012', debit: 2100, credit: 0, balance: 402325, status: 'Unmatched', source: 'Feed', bank: 'Emirates NBD' },
-];
-
-const initBookTx: BookTx[] = [
-  { id: 'BOOK-001', date: '2024-03-01', description: 'Receipt - Global Tours UK INV-001', reference: 'INV-001', amount: 15000, type: 'Credit', status: 'Matched', matchedWith: 'BNK-001', source: 'Invoice', category: 'Agent Receipt' },
-  { id: 'BOOK-002', date: '2024-03-03', description: 'Supplier Payment - Marriott Hotels', reference: 'PO-2024-001', amount: 32000, type: 'Debit', status: 'Matched', matchedWith: 'BNK-002', source: 'Payment', category: 'Supplier Payment' },
-  { id: 'BOOK-003', date: '2024-03-05', description: 'Customer Payment - Ahmed Hassan', reference: 'BK-004', amount: 3675, type: 'Credit', status: 'Matched', matchedWith: 'BNK-003', source: 'Payment', category: 'Customer Receipt' },
-  { id: 'BOOK-004', date: '2024-03-10', description: 'Agent Receipt - Euro Holidays', reference: 'INV-004', amount: 23100, type: 'Credit', status: 'Partial', matchedWith: 'BNK-005', source: 'Invoice', category: 'Agent Receipt' },
-  { id: 'BOOK-005', date: '2024-03-12', description: 'Expense - Office Rent Mar 2024', reference: 'EX-005', amount: 18000, type: 'Debit', status: 'Matched', matchedWith: 'BNK-006', source: 'Manual', category: 'Rent' },
-  { id: 'BOOK-006', date: '2024-03-15', description: 'Payroll - Driver Salaries March', reference: 'PAY-2024-003', amount: 15000, type: 'Debit', status: 'Matched', matchedWith: 'BNK-008', source: 'Payment', category: 'Payroll' },
-  { id: 'BOOK-007', date: '2024-03-19', description: 'Supplier Payment - Desert Safari LLC', reference: 'INV-006', amount: 18000, type: 'Debit', status: 'Matched', matchedWith: 'BNK-010', source: 'Payment', category: 'Supplier Payment' },
-  { id: 'BOOK-008', date: '2024-03-20', description: 'Customer Booking Payment - US Travels', reference: 'BK-010', amount: 8500, type: 'Credit', status: 'Unmatched', source: 'Invoice', category: 'Customer Receipt' },
-  { id: 'BOOK-009', date: '2024-03-21', description: 'Expense - Fuel Fleet Week 11', reference: 'EX-001', amount: 2500, type: 'Debit', status: 'Unmatched', source: 'Manual', category: 'Fuel' },
-  { id: 'BOOK-010', date: '2024-03-21', description: 'VAT Return Q1 2024 - FTA', reference: 'VAT-Q1-2024', amount: 12500, type: 'Debit', status: 'Partial', matchedWith: 'BNK-011', source: 'Manual', category: 'VAT' },
-];
-
-const initMatches: RecMatch[] = [
-  { id: 'REC-001', bankTxId: 'BNK-001', bookTxId: 'BOOK-001', matchedBy: 'System', matchedAt: '2024-03-01 09:05', difference: 0, method: 'Auto', confidence: 'High', score: 90, reasons: ['Exact amount match', 'Same date', 'Reference exact match'] },
-  { id: 'REC-002', bankTxId: 'BNK-002', bookTxId: 'BOOK-002', matchedBy: 'System', matchedAt: '2024-03-03 10:12', difference: 0, method: 'Auto', confidence: 'High', score: 85, reasons: ['Exact amount match', '1 day apart', 'Reference contains match'] },
-  { id: 'REC-003', bankTxId: 'BNK-003', bookTxId: 'BOOK-003', matchedBy: 'System', matchedAt: '2024-03-05 11:30', difference: 0, method: 'Auto', confidence: 'High', score: 100, reasons: ['Exact amount match', 'Same date', 'Reference exact match', '3 description keywords match'] },
-  { id: 'REC-004', bankTxId: 'BNK-005', bookTxId: 'BOOK-004', matchedBy: 'Admin User', matchedAt: '2024-03-10 14:20', difference: 1100, method: 'Manual', confidence: 'Medium', score: 62, reasons: ['Amount within 5%', 'Same date', 'Partial reference match'], note: 'Partial payment accepted — balance pending next month' },
-  { id: 'REC-005', bankTxId: 'BNK-006', bookTxId: 'BOOK-005', matchedBy: 'System', matchedAt: '2024-03-12 09:45', difference: 0, method: 'Auto', confidence: 'High', score: 88, reasons: ['Exact amount match', 'Same date', 'Description keyword match'] },
-  { id: 'REC-006', bankTxId: 'BNK-008', bookTxId: 'BOOK-006', matchedBy: 'System', matchedAt: '2024-03-15 08:00', difference: 0, method: 'Auto', confidence: 'High', score: 95, reasons: ['Exact amount match', 'Same date', 'Reference exact match'] },
-  { id: 'REC-007', bankTxId: 'BNK-010', bookTxId: 'BOOK-007', matchedBy: 'System', matchedAt: '2024-03-19 16:10', difference: 0, method: 'Auto', confidence: 'High', score: 92, reasons: ['Exact amount match', 'Same date', 'Reference match'] },
-  { id: 'REC-008', bankTxId: 'BNK-011', bookTxId: 'BOOK-010', matchedBy: 'System', matchedAt: '2024-03-21 09:00', difference: 0, method: 'Reference', confidence: 'High', score: 98, reasons: ['Exact amount match', 'Same date', 'Reference exact match: VAT-Q1-2024'] },
-];
-
-const initAudit: AuditEntry[] = [
-  { id: 'A-001', action: 'Auto Match', user: 'System', timestamp: '2024-03-01 09:05', details: 'BNK-001 ↔ BOOK-001 · AED 15,000 · Exact match · Score: 90 · High confidence', type: 'match' },
-  { id: 'A-002', action: 'Auto Match', user: 'System', timestamp: '2024-03-03 10:12', details: 'BNK-002 ↔ BOOK-002 · AED 32,000 · Amount + date · Score: 85 · High confidence', type: 'match' },
-  { id: 'A-003', action: 'Auto Match', user: 'System', timestamp: '2024-03-05 11:30', details: 'BNK-003 ↔ BOOK-003 · AED 3,675 · Perfect match · Score: 100 · High confidence', type: 'match' },
-  { id: 'A-004', action: 'Manual Match', user: 'Admin User', timestamp: '2024-03-10 14:20', details: 'BNK-005 ↔ BOOK-004 · Diff: AED 1,100 · Partial accepted · Score: 62 · Medium', type: 'manual' },
-  { id: 'A-005', action: 'Bank Statement Imported', user: 'Admin User', timestamp: '2024-03-20 08:30', details: 'Emirates NBD: 12 transactions from BankStatement_Mar24.xlsx · Preset: Emirates NBD Standard', type: 'import' },
-  { id: 'A-006', action: 'Auto-Match Engine Run', user: 'System', timestamp: '2024-03-20 08:31', details: '6 Matched · 2 Partial · 4 Unmatched from 12 bank transactions · Duration: 142ms', type: 'system' },
-];
-
-const defaultRules: BankRule[] = [
-  { id: 'R-001', name: 'Bank Charges & Fees', enabled: true, contains: 'charge|fee|commission', tx: 'Debit', amountMax: 2000, action: 'CreateBookTx', category: 'Bank Charges', priority: 1 },
-  { id: 'R-002', name: 'Agent Receipts', enabled: true, contains: 'agent|receipt|tours|travel', tx: 'Credit', action: 'CreateBookTx', category: 'Agent Receipt', priority: 2 },
-  { id: 'R-003', name: 'Salary & Payroll', enabled: true, contains: 'salary|payroll|driver', tx: 'Debit', action: 'CreateBookTx', category: 'Payroll', priority: 3 },
-  { id: 'R-004', name: 'VAT Payments FTA', enabled: true, contains: 'vat|fta|tax', tx: 'Debit', action: 'CreateBookTx', category: 'VAT Payment', priority: 4 },
-  { id: 'R-005', name: 'Hotel Supplier Payments', enabled: true, contains: 'hotel|marriott|hilton|hyatt', tx: 'Debit', action: 'CreateBookTx', category: 'Supplier Payment', priority: 5 },
-];
-
-const initFeeds: FeedLog[] = [
-  { id: 'F-001', ts: '2024-03-20 08:30', added: 4, created: 2, status: 'Success', bank: 'Emirates NBD' },
-  { id: 'F-002', ts: '2024-03-19 08:00', added: 3, created: 1, status: 'Success', bank: 'Emirates NBD' },
-  { id: 'F-003', ts: '2024-03-18 08:00', added: 5, created: 3, status: 'Warning', bank: 'ADCB' },
-];
+const initBankTx: BankTx[] = [];
+const initBookTx: BookTx[] = [];
+const initMatches: RecMatch[] = [];
+const initAudit: AuditEntry[] = [];
+const defaultRules: BankRule[] = [];
+const initFeeds: FeedLog[] = [];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) => `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2 })}`;
