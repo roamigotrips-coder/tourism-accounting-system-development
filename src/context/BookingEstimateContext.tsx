@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { fetchEstimates, upsertEstimate } from '../lib/supabaseSync';
 
 export type EstimateStatus = 'Pending Approval' | 'Approved' | 'Rejected' | 'Invoiced';
 
@@ -60,21 +59,18 @@ interface BookingEstimateContextType {
 const BookingEstimateContext = createContext<BookingEstimateContextType | null>(null);
 
 export function BookingEstimateProvider({ children }: { children: ReactNode }) {
-  const [estimates, setEstimates] = useState<BookingEstimate[]>([]);
+  const [estimates, setEstimates] = useState<BookingEstimate[]>(() => {
+    try { const s = localStorage.getItem('be_estimates'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
 
-  // ── Load from Supabase on mount ─────────────────────────────────────────────
-  useEffect(() => {
-    fetchEstimates().then(data => {
-      if (data) setEstimates(data);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ── Persist to localStorage ─────────────────────────────────────────────────
+  useEffect(() => { localStorage.setItem('be_estimates', JSON.stringify(estimates)); }, [estimates]);
 
   const pendingCount = estimates.filter(e => e.status === 'Pending Approval').length;
 
   const addEstimate = (estimate: BookingEstimate) => {
     setEstimates(prev => [estimate, ...prev]);
-    upsertEstimate(estimate);
   };
 
   const approveEstimate = (id: string, approvedBy: string): BookingEstimate | null => {
@@ -86,7 +82,6 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
       }
       return e;
     }));
-    if (approved) upsertEstimate(approved);
     return approved;
   };
 
@@ -94,7 +89,6 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Rejected' as EstimateStatus, rejectedBy, rejectedAt: new Date().toISOString(), rejectionReason: reason };
-        upsertEstimate(updated);
         return updated;
       }
       return e;
@@ -105,7 +99,6 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Invoiced' as EstimateStatus, invoiceId };
-        upsertEstimate(updated);
         return updated;
       }
       return e;

@@ -1,9 +1,4 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import {
-  fetchAccounts, fetchJournalEntries, fetchPeriods, fetchTransactionLock,
-  upsertAccount, upsertJournalEntry, deleteJournalEntry,
-  upsertPeriod, saveTransactionLock, clearTransactionLockDb,
-} from '../lib/supabaseSync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +131,7 @@ export interface ValidationWarning {
   message: string;
 }
 
-// ─── Default Data (empty — all data comes from Supabase) ──────────────────────
+// ─── Default Data (empty — user creates all data) ──────────────────────
 
 
 // ─── Validation Engine ────────────────────────────────────────────────────────
@@ -417,9 +412,18 @@ const AccountingEngineContext = createContext<AccountingEngineContextType | null
 
 export function AccountingEngineProvider({ children }: { children: ReactNode }) {
   // ── Initial state from localStorage (instant) ──────────────────────────────
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(() => {
+    try { const s = localStorage.getItem('ae_accounts'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
+  const [entries, setEntries] = useState<JournalEntry[]>(() => {
+    try { const s = localStorage.getItem('ae_entries'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
+  const [periods, setPeriods] = useState<AccountingPeriod[]>(() => {
+    try { const s = localStorage.getItem('ae_periods'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
   const [globalAuditLog, setGlobalAuditLog] = useState<AuditEvent[]>(() => {
     try { const s = localStorage.getItem('ae_audit'); return s ? JSON.parse(s) : []; }
     catch { return []; }
@@ -429,22 +433,15 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     catch { return null; }
   });
 
-  // ── Load from Supabase on mount (overrides localStorage if data exists) ─────
+  // ── Persist to localStorage ─────────────────────────────────────────────────
+  useEffect(() => { localStorage.setItem('ae_accounts', JSON.stringify(accounts)); }, [accounts]);
+  useEffect(() => { localStorage.setItem('ae_entries', JSON.stringify(entries)); }, [entries]);
+  useEffect(() => { localStorage.setItem('ae_periods', JSON.stringify(periods)); }, [periods]);
+  useEffect(() => { localStorage.setItem('ae_audit', JSON.stringify(globalAuditLog)); }, [globalAuditLog]);
   useEffect(() => {
-    fetchAccounts().then(data => {
-      if (data) setAccounts(data);
-    });
-    fetchJournalEntries().then(data => {
-      if (data) setEntries(data);
-    });
-    fetchPeriods().then(data => {
-      if (data) setPeriods(data);
-    });
-    fetchTransactionLock().then(lock => {
-      if (lock) setTransactionLockState(lock);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (transactionLock) localStorage.setItem('ae_txlock', JSON.stringify(transactionLock));
+    else localStorage.removeItem('ae_txlock');
+  }, [transactionLock]);
 
 
   // Derived state
@@ -473,7 +470,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
       passwordHash: password ? btoa(password) : undefined,
     };
     setTransactionLockState(lock);
-    saveTransactionLock(lock);
     addAudit({ userId: 'U1', userName: lockedBy, action: 'Transaction Lock Set', details: `Locked up to ${lockDate}`, module: 'Transaction Lock' } as any);
   }, [addAudit]);
 
@@ -485,7 +481,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     }
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Transaction Lock Cleared', details: `Was locked up to ${transactionLock.lockDate}`, module: 'Transaction Lock' } as any);
     setTransactionLockState(null);
-    clearTransactionLockDb();
     return true;
   }, [transactionLock, addAudit]);
 
@@ -494,7 +489,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   const addAccount = useCallback((acc: Omit<Account, 'id' | 'createdAt'>): Account => {
     const newAcc: Account = { ...acc, id: `ACC-${Date.now()}`, createdAt: new Date().toISOString() };
     setAccounts(prev => [...prev, newAcc]);
-    upsertAccount(newAcc);
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Created Account', details: `${newAcc.code} - ${newAcc.name}`, module: 'Chart of Accounts' } as any);
     return newAcc;
   }, [addAudit]);
@@ -503,7 +497,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     setAccounts(prev => {
       const updated = prev.map(a => a.id === id ? { ...a, ...changes } : a);
       const changedAcc = updated.find(a => a.id === id);
-      if (changedAcc) upsertAccount(changedAcc);
+      // updated
       return updated;
     });
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Updated Account', details: `Account ID: ${id}`, module: 'Chart of Accounts' } as any);
@@ -524,7 +518,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!period || period.status !== 'Open') return false;
     const updated = { ...period, status: 'Closed' as const, closedBy: userName, closedAt: new Date().toISOString() };
     setPeriods(prev => prev.map(p => p.id === periodId ? updated : p));
-    upsertPeriod(updated);
     addAudit({ userId: 'U1', userName, action: 'Closed Period', details: period.name, module: 'Accounting Periods' } as any);
     return true;
   }, [periods, addAudit]);
@@ -534,7 +527,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!period || period.status === 'Locked') return false;
     const updated = { ...period, status: 'Open' as const, closedBy: undefined, closedAt: undefined };
     setPeriods(prev => prev.map(p => p.id === periodId ? updated : p));
-    upsertPeriod(updated);
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Reopened Period', details: period?.name, module: 'Accounting Periods' } as any);
     return true;
   }, [periods, addAudit]);
@@ -542,7 +534,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   const addPeriod = useCallback((p: Omit<AccountingPeriod, 'id'>) => {
     const newP = { ...p, id: `P-${Date.now()}` };
     setPeriods(prev => [...prev, newP]);
-    upsertPeriod(newP);
   }, []);
 
   // ── Journal Entry actions ────────────────────────────────────────────────────
@@ -599,7 +590,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
       if (existing) return prev.map(e => e.id === je.id ? { ...je, status: existing.status === 'Draft' ? 'Draft' : existing.status } : e);
       return [...prev, je];
     });
-    upsertJournalEntry(je);
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Saved Draft', details: je.entryNumber, module: 'Journal Entries' } as any);
     return je;
   }, [nextEntryNumber, addAudit]);
@@ -613,7 +603,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Submitted for Approval', details: 'Sent to finance team' };
     const updated = { ...entry, status: 'Pending Approval' as const, submittedAt: now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntry(updated);
     addAudit({ userId: 'U1', userName, action: 'Submitted for Approval', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, validateEntry, addAudit]);
@@ -625,7 +614,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Approved', details: 'Entry approved for posting' };
     const updated = { ...entry, status: 'Approved' as const, approvedBy: userName, approvedAt: now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntry(updated);
     addAudit({ userId: 'U1', userName, action: 'Approved Entry', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);
@@ -637,7 +625,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Rejected', details: reason };
     const updated = { ...entry, status: 'Rejected' as const, rejectedBy: userName, rejectedAt: now, rejectionReason: reason, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntry(updated);
     addAudit({ userId: 'U1', userName, action: 'Rejected Entry', details: `${entry.entryNumber}: ${reason}`, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);
@@ -652,7 +639,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Posted to General Ledger', details: 'Entry posted — GL and Trial Balance updated' };
     const updated = { ...entry, status: 'Posted' as const, postedAt: now, approvedBy: entry.approvedBy || userName, approvedAt: entry.approvedAt || now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntry(updated);
     addAudit({ userId: 'U1', userName, action: 'Posted Entry', details: entry.entryNumber, module: 'Journal Entries', newValue: 'Posted' } as any);
     return true;
   }, [entries, validateEntry, addAudit]);
@@ -681,8 +667,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Reversed', details: reason };
     const originalUpdated = { ...entry, status: 'Reversed' as EntryStatus, reversedBy: reversalEntry.id, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => [...prev.map(e => e.id === entryId ? originalUpdated : e), reversalEntry]);
-    upsertJournalEntry(originalUpdated);
-    upsertJournalEntry(reversalEntry);
     addAudit({ userId: 'U1', userName, action: 'Reversed Entry', details: `${entry.entryNumber} → ${reversalEntry.entryNumber}`, module: 'Journal Entries' } as any);
     return reversalEntry;
   }, [entries, addAudit]);
@@ -692,7 +676,6 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!entry || entry.status === 'Posted') return false;
     if (isTransactionLocked(entry.date)) return false;
     setEntries(prev => prev.filter(e => e.id !== entryId));
-    deleteJournalEntry(entryId);
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Deleted Entry', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);

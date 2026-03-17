@@ -1,13 +1,19 @@
 -- ============================================================
 -- AccountsPro — Tourism Accounting System
+-- FRESH INSTALL: Drops all existing tables and recreates them
 -- Run this in your Supabase SQL Editor (Dashboard → SQL Editor)
 -- ============================================================
 
--- Enable UUID extension (optional, we use TEXT ids)
--- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- ── Drop existing tables (order matters for foreign keys) ────
+DROP TABLE IF EXISTS journal_entry_lines CASCADE;
+DROP TABLE IF EXISTS journal_entries CASCADE;
+DROP TABLE IF EXISTS booking_estimates CASCADE;
+DROP TABLE IF EXISTS accounting_periods CASCADE;
+DROP TABLE IF EXISTS transaction_lock CASCADE;
+DROP TABLE IF EXISTS accounts CASCADE;
 
 -- ── Chart of Accounts ────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE accounts (
   id                   TEXT PRIMARY KEY,
   code                 TEXT NOT NULL,
   name                 TEXT NOT NULL,
@@ -23,7 +29,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 -- ── Journal Entries ──────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS journal_entries (
+CREATE TABLE journal_entries (
   id               TEXT PRIMARY KEY,
   entry_number     TEXT NOT NULL,
   date             DATE NOT NULL,
@@ -50,7 +56,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 );
 
 -- ── Journal Entry Lines ──────────────────────────────────────
-CREATE TABLE IF NOT EXISTS journal_entry_lines (
+CREATE TABLE journal_entry_lines (
   id                TEXT PRIMARY KEY,
   journal_entry_id  TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   account_id        TEXT NOT NULL,
@@ -64,7 +70,7 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
 );
 
 -- ── Accounting Periods ───────────────────────────────────────
-CREATE TABLE IF NOT EXISTS accounting_periods (
+CREATE TABLE accounting_periods (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   period     TEXT NOT NULL UNIQUE,
@@ -76,7 +82,7 @@ CREATE TABLE IF NOT EXISTS accounting_periods (
 );
 
 -- ── Booking Estimates ────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS booking_estimates (
+CREATE TABLE booking_estimates (
   id               TEXT PRIMARY KEY,
   booking_ref      TEXT NOT NULL,
   agent            TEXT NOT NULL,
@@ -107,7 +113,7 @@ CREATE TABLE IF NOT EXISTS booking_estimates (
 );
 
 -- ── Transaction Lock ─────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS transaction_lock (
+CREATE TABLE transaction_lock (
   id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   lock_date     TEXT NOT NULL,
   locked_by     TEXT NOT NULL,
@@ -116,8 +122,7 @@ CREATE TABLE IF NOT EXISTS transaction_lock (
   password_hash TEXT
 );
 
--- ── Row Level Security (enable public read/write for now) ────
--- Adjust these policies when you add authentication.
+-- ── Row Level Security (public read/write — add auth later) ──
 ALTER TABLE accounts              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entries       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entry_lines   ENABLE ROW LEVEL SECURITY;
