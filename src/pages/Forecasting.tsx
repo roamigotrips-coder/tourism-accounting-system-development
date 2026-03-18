@@ -1,6 +1,8 @@
 import { TrendingUp, DollarSign, Target } from 'lucide-react';
-import { forecastData, monthlyRevenue } from '../data/mockData';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar } from 'recharts';
+
+const forecastData: { month: string; actual: number; projected: number; expenses: number }[] = [];
+const monthlyRevenue: { month: string; revenue: number; expenses: number; profit: number }[] = [];
 
 export default function Forecasting() {
   const projectedRevenue = forecastData.reduce((s, f) => s + f.projected, 0);

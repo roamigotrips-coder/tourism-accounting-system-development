@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { tourPackages } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { fetchTourPackages, upsertTourPackage } from '../lib/supabaseSync';
+import type { TourPackage } from '../data/mockData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Package, TrendingUp, DollarSign, Plus, X, Save } from 'lucide-react';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 interface PackageForm {
   name: string;
@@ -20,7 +22,24 @@ const emptyForm: PackageForm = {
 export default function TourCosting() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<PackageForm>(emptyForm);
-  const [packageList, setPackageList] = useState(tourPackages);
+  const [packageList, setPackageList] = useState<TourPackage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchTourPackages();
+        if (!cancelled && data) setPackageList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const totalRevenue = packageList.reduce((s, p) => s + p.price * p.bookings, 0);
   const totalProfit = packageList.reduce((s, p) => s + p.profit * p.bookings, 0);
@@ -65,9 +84,13 @@ export default function TourCosting() {
       bookings: 0,
     };
     setPackageList(prev => [newPackage, ...prev]);
+    upsertTourPackage(newPackage).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading tour packages..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

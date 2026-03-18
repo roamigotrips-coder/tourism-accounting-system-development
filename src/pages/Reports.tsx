@@ -1,9 +1,12 @@
-import { FileText, Download, TrendingUp, TrendingDown, DollarSign, Users, Building2, MapPin, Database } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FileText, Download, Database } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend, Pie, Cell, PieChart as RechartsPieChart,
 } from 'recharts';
-import { agents, suppliers } from '../data/mockData';
+import { fetchAgents, fetchSuppliers } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import type { Agent, Supplier } from '../data/mockData';
 import { useAccountingEngine } from '../context/AccountingEngine';
 
 // ── Tourism-specific data (not in GL) ────────────────────────────────────────
@@ -21,7 +24,30 @@ function GlBadge() {
 }
 
 export default function Reports() {
-  const { trialBalance, entries, accounts } = useAccountingEngine();
+  const { trialBalance, entries } = useAccountingEngine();
+
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [agentsData, suppliersData] = await Promise.all([fetchAgents(), fetchSuppliers()]);
+        if (!cancelled) {
+          if (agentsData) setAgents(agentsData);
+          if (suppliersData) setSuppliers(suppliersData);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Aggregate from Trial Balance (General Ledger) ─────────────────────────
   const glRevenue   = trialBalance.filter(t => t.accountType === 'Revenue')  .reduce((s, t) => s + t.closingBalance, 0);
@@ -67,6 +93,9 @@ export default function Reports() {
     Liability: 'text-amber-700 bg-amber-50',
     Equity: 'text-purple-700 bg-purple-50',
   };
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

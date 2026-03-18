@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { fetchEstimates as fetchEstimatesDb, upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
 
 export type EstimateStatus = 'Pending Approval' | 'Approved' | 'Rejected' | 'Invoiced';
 
@@ -54,23 +55,42 @@ interface BookingEstimateContextType {
   rejectEstimate: (id: string, rejectedBy: string, reason: string) => void;
   markInvoiced: (id: string, invoiceId: string) => void;
   pendingCount: number;
+  loading: boolean;
+  error: string | null;
 }
 
 const BookingEstimateContext = createContext<BookingEstimateContextType | null>(null);
 
 export function BookingEstimateProvider({ children }: { children: ReactNode }) {
-  const [estimates, setEstimates] = useState<BookingEstimate[]>(() => {
-    try { const s = localStorage.getItem('be_estimates'); return s ? JSON.parse(s) : []; }
-    catch { return []; }
-  });
+  const [estimates, setEstimates] = useState<BookingEstimate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // ── Persist to localStorage ─────────────────────────────────────────────────
-  useEffect(() => { localStorage.setItem('be_estimates', JSON.stringify(estimates)); }, [estimates]);
+  // ── Load from Supabase on mount ───────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await fetchEstimatesDb();
+        if (!cancelled) {
+          if (data !== null) { setEstimates(data); setError(null); }
+          else setError('Failed to load booking estimates');
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load booking estimates');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const pendingCount = estimates.filter(e => e.status === 'Pending Approval').length;
 
   const addEstimate = (estimate: BookingEstimate) => {
     setEstimates(prev => [estimate, ...prev]);
+    upsertEstimateDb(estimate).catch(() => {});
   };
 
   const approveEstimate = (id: string, approvedBy: string): BookingEstimate | null => {
@@ -78,6 +98,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         approved = { ...e, status: 'Approved', approvedBy, approvedAt: new Date().toISOString() };
+        upsertEstimateDb(approved).catch(() => {});
         return approved;
       }
       return e;
@@ -89,6 +110,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Rejected' as EstimateStatus, rejectedBy, rejectedAt: new Date().toISOString(), rejectionReason: reason };
+        upsertEstimateDb(updated).catch(() => {});
         return updated;
       }
       return e;
@@ -99,6 +121,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Invoiced' as EstimateStatus, invoiceId };
+        upsertEstimateDb(updated).catch(() => {});
         return updated;
       }
       return e;
@@ -106,7 +129,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <BookingEstimateContext.Provider value={{ estimates, addEstimate, approveEstimate, rejectEstimate, markInvoiced, pendingCount }}>
+    <BookingEstimateContext.Provider value={{ estimates, addEstimate, approveEstimate, rejectEstimate, markInvoiced, pendingCount, loading, error }}>
       {children}
     </BookingEstimateContext.Provider>
   );

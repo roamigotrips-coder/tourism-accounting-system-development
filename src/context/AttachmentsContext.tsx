@@ -1,4 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  fetchAttachments as fetchAttachmentsDb,
+  upsertAttachment as upsertAttachmentDb,
+  deleteAttachmentDb,
+  fetchEmailRoutes as fetchEmailRoutesDb,
+  upsertEmailRoute as upsertEmailRouteDb,
+  deleteEmailRouteDb,
+} from '../lib/supabaseSync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,12 +25,12 @@ export interface Attachment {
   mimeType: string;
   size: number;
   dataUrl?: string;
-  ocrText?: string;          // OCR extracted text
+  ocrText?: string;
   uploadedAt: string;
   uploadedBy: string;
   source: 'upload' | 'email-in' | 'generated';
   module: AttachmentModule;
-  documentId: string;        // e.g. invoice id, expense id, journal entry id
+  documentId: string;
   notes: AttachmentNote[];
   tags: string[];
   version: number;
@@ -40,19 +48,16 @@ export interface EmailInRoute {
 interface AttachmentsContextType {
   attachments: Attachment[];
   emailRoutes: EmailInRoute[];
-  // CRUD
+  loading: boolean;
+  error: string | null;
   addAttachment: (att: Omit<Attachment, 'id' | 'uploadedAt' | 'notes' | 'version'>) => Attachment;
   removeAttachment: (id: string) => void;
   updateAttachment: (id: string, patch: Partial<Attachment>) => void;
-  // Notes
   addNote: (attachmentId: string, text: string) => void;
   removeNote: (attachmentId: string, noteId: string) => void;
-  // Tags
   addTag: (attachmentId: string, tag: string) => void;
   removeTag: (attachmentId: string, tag: string) => void;
-  // Query
   getByDocument: (module: AttachmentModule, documentId: string) => Attachment[];
-  // Email routes
   upsertEmailRoute: (route: EmailInRoute) => void;
   deleteEmailRoute: (id: string) => void;
   simulateEmailIn: (routeId: string, module: AttachmentModule, documentId: string) => Attachment | null;
@@ -70,8 +75,6 @@ export function useAttachments() {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
-const LS_ATTS   = 'accountspro.v2.attachments';
-const LS_ROUTES = 'accountspro.v2.emailRoutes';
 const CURRENT_USER = 'Admin User';
 
 function uid() { return `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
@@ -84,18 +87,34 @@ const DEFAULT_ROUTES: EmailInRoute[] = [
 ];
 
 export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [attachments, setAttachments] = useState<Attachment[]>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_ATTS) || '[]'); } catch { return []; }
-  });
-  const [emailRoutes, setEmailRoutes] = useState<EmailInRoute[]>(() => {
-    try {
-      const raw = localStorage.getItem(LS_ROUTES);
-      return raw ? JSON.parse(raw) : DEFAULT_ROUTES;
-    } catch { return DEFAULT_ROUTES; }
-  });
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [emailRoutes, setEmailRoutes] = useState<EmailInRoute[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { localStorage.setItem(LS_ATTS,   JSON.stringify(attachments));  }, [attachments]);
-  useEffect(() => { localStorage.setItem(LS_ROUTES, JSON.stringify(emailRoutes));  }, [emailRoutes]);
+  // ── Load from Supabase on mount ───────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [atts, routes] = await Promise.all([
+          fetchAttachmentsDb(),
+          fetchEmailRoutesDb(),
+        ]);
+        if (cancelled) return;
+        if (atts !== null) setAttachments(atts);
+        if (routes !== null && routes.length > 0) setEmailRoutes(routes);
+        else setEmailRoutes(DEFAULT_ROUTES);
+        setError(null);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load attachments');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   const addAttachment: AttachmentsContextType['addAttachment'] = (att) => {
@@ -107,39 +126,77 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       version: 1,
     };
     setAttachments(prev => [full, ...prev]);
+    upsertAttachmentDb(full).catch(() => {});
     return full;
   };
 
-  const removeAttachment = (id: string) => setAttachments(prev => prev.filter(a => a.id !== id));
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+    deleteAttachmentDb(id).catch(() => {});
+  };
 
-  const updateAttachment = (id: string, patch: Partial<Attachment>) =>
-    setAttachments(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+  const updateAttachment = (id: string, patch: Partial<Attachment>) => {
+    setAttachments(prev => {
+      const next = prev.map(a => a.id === id ? { ...a, ...patch } : a);
+      const changed = next.find(a => a.id === id);
+      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      return next;
+    });
+  };
 
   // ── Notes ─────────────────────────────────────────────────────────────────
   const addNote = (attachmentId: string, text: string) => {
     const note: AttachmentNote = { id: nid(), text, createdAt: new Date().toISOString(), createdBy: CURRENT_USER };
-    setAttachments(prev => prev.map(a => a.id === attachmentId ? { ...a, notes: [...a.notes, note] } : a));
+    setAttachments(prev => {
+      const next = prev.map(a => a.id === attachmentId ? { ...a, notes: [...a.notes, note] } : a);
+      const changed = next.find(a => a.id === attachmentId);
+      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      return next;
+    });
   };
 
-  const removeNote = (attachmentId: string, noteId: string) =>
-    setAttachments(prev => prev.map(a => a.id === attachmentId ? { ...a, notes: a.notes.filter(n => n.id !== noteId) } : a));
+  const removeNote = (attachmentId: string, noteId: string) => {
+    setAttachments(prev => {
+      const next = prev.map(a => a.id === attachmentId ? { ...a, notes: a.notes.filter(n => n.id !== noteId) } : a);
+      const changed = next.find(a => a.id === attachmentId);
+      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      return next;
+    });
+  };
 
   // ── Tags ──────────────────────────────────────────────────────────────────
-  const addTag = (attachmentId: string, tag: string) =>
-    setAttachments(prev => prev.map(a => a.id === attachmentId && !a.tags.includes(tag) ? { ...a, tags: [...a.tags, tag] } : a));
+  const addTag = (attachmentId: string, tag: string) => {
+    setAttachments(prev => {
+      const next = prev.map(a => a.id === attachmentId && !a.tags.includes(tag) ? { ...a, tags: [...a.tags, tag] } : a);
+      const changed = next.find(a => a.id === attachmentId);
+      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      return next;
+    });
+  };
 
-  const removeTag = (attachmentId: string, tag: string) =>
-    setAttachments(prev => prev.map(a => a.id === attachmentId ? { ...a, tags: a.tags.filter(t => t !== tag) } : a));
+  const removeTag = (attachmentId: string, tag: string) => {
+    setAttachments(prev => {
+      const next = prev.map(a => a.id === attachmentId ? { ...a, tags: a.tags.filter(t => t !== tag) } : a);
+      const changed = next.find(a => a.id === attachmentId);
+      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      return next;
+    });
+  };
 
   // ── Query ─────────────────────────────────────────────────────────────────
   const getByDocument = (module: AttachmentModule, documentId: string) =>
     attachments.filter(a => a.module === module && a.documentId === documentId);
 
   // ── Email routes ──────────────────────────────────────────────────────────
-  const upsertEmailRoute = (route: EmailInRoute) =>
+  const upsertEmailRoute = (route: EmailInRoute) => {
     setEmailRoutes(prev => prev.some(r => r.id === route.id) ? prev.map(r => r.id === route.id ? route : r) : [...prev, route]);
+    upsertEmailRouteDb(route).catch(() => {});
+  };
 
-  const deleteEmailRoute = (id: string) => setEmailRoutes(prev => prev.filter(r => r.id !== id));
+  const deleteEmailRoute = (id: string) => {
+    setEmailRoutes(prev => prev.filter(r => r.id !== id));
+    deleteEmailRouteDb(id).catch(() => {});
+  };
 
   const simulateEmailIn = (routeId: string, module: AttachmentModule, documentId: string): Attachment | null => {
     const route = emailRoutes.find(r => r.id === routeId);
@@ -161,7 +218,7 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   return (
     <AttachmentsContext.Provider value={{
-      attachments, emailRoutes,
+      attachments, emailRoutes, loading, error,
       addAttachment, removeAttachment, updateAttachment,
       addNote, removeNote,
       addTag, removeTag,

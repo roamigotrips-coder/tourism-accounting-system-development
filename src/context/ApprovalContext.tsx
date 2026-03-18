@@ -1,5 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { getCFOThreshold, routeApproval } from '../utils/approvalThresholds';
+import {
+  fetchApprovalItems as fetchApprovalItemsDb,
+  upsertApprovalItem as upsertApprovalItemDb,
+  fetchApprovalRules as fetchApprovalRulesDb,
+  upsertApprovalRule as upsertApprovalRuleDb,
+  deleteApprovalRuleDb,
+} from '../lib/supabaseSync';
 
 // ─── 5-Stage Workflow ─────────────────────────────────────────────────────────
 //
@@ -175,77 +182,14 @@ function buildStageHistory(routing: ReturnType<typeof routeApproval>): StageInfo
   ];
 }
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
-function makeSeedItem(
-  id: string,
-  refNumber: string,
-  type: ApprovalItemType,
-  title: string,
-  description: string,
-  amount: number,
-  currency: string,
-  party: string,
-  partyType: string,
-  category: string,
-  submittedBy: string,
-  dept: string,
-  status: WorkflowStage,
-  priority: ApprovalPriority,
-  glPosted: boolean,
-  glEntryRef?: string,
-): ApprovalItem {
-  const routing = routeApproval(amount, type as 'Invoice' | 'Expense' | 'Purchase' | 'Journal Entry');
-  const requiresCFO = amount >= getCFOThreshold();
-  return {
-    id, refNumber, type, title, description, amount, currency,
-    vatAmount: Math.round(amount * 0.05 * 100) / 100,
-    totalAmount: Math.round(amount * 1.05 * 100) / 100,
-    submittedBy, submittedAt: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString(),
-    submittedByDept: dept, status, priority,
-    party, partyType, category,
-    notes: '', attachments: [], correctionNote: '', rejectionReason: '', tags: [],
-    glPosted, glEntryRef,
-    managerRole: routing.primaryApprover,
-    managerLabel: routing.primaryLabel,
-    financeRole: routing.requiresSecondApproval && routing.secondApprover ? routing.secondApprover : 'finance_director',
-    financeLabel: routing.requiresSecondApproval ? 'Finance Director' : 'Finance Manager',
-    requiresCFO,
-    stageHistory: buildStageHistory(routing),
-    history: [
-      { id: `h${Date.now()}-1`, timestamp: new Date(Date.now() - 86400000).toISOString(), action: 'Draft created', performedBy: submittedBy, fromStatus: 'Draft', toStatus: 'Draft' },
-      ...(status !== 'Draft' ? [{ id: `h${Date.now()}-2`, timestamp: new Date(Date.now() - 72000000).toISOString(), action: 'Submitted for approval', performedBy: submittedBy, fromStatus: 'Draft' as WorkflowStage, toStatus: 'Submitted' as WorkflowStage }] : []),
-      ...((['Manager Approval', 'Finance Approval', 'Accounting Posting', 'Posted'] as WorkflowStage[]).includes(status) ? [{ id: `h${Date.now()}-3`, timestamp: new Date(Date.now() - 48000000).toISOString(), action: 'Moved to Manager Approval', performedBy: 'System', fromStatus: 'Submitted' as WorkflowStage, toStatus: 'Manager Approval' as WorkflowStage }] : []),
-      ...((['Finance Approval', 'Accounting Posting', 'Posted'] as WorkflowStage[]).includes(status) ? [{ id: `h${Date.now()}-4`, timestamp: new Date(Date.now() - 36000000).toISOString(), action: 'Manager Approved', performedBy: routing.primaryLabel, fromStatus: 'Manager Approval' as WorkflowStage, toStatus: 'Finance Approval' as WorkflowStage }] : []),
-      ...((['Accounting Posting', 'Posted'] as WorkflowStage[]).includes(status) ? [{ id: `h${Date.now()}-5`, timestamp: new Date(Date.now() - 24000000).toISOString(), action: 'Finance Approved', performedBy: 'Finance Director', fromStatus: 'Finance Approval' as WorkflowStage, toStatus: 'Accounting Posting' as WorkflowStage }] : []),
-      ...(status === 'Posted' ? [{ id: `h${Date.now()}-6`, timestamp: new Date(Date.now() - 3600000).toISOString(), action: 'Posted to General Ledger', performedBy: 'Senior Accountant', fromStatus: 'Accounting Posting' as WorkflowStage, toStatus: 'Posted' as WorkflowStage }] : []),
-    ],
-  };
-}
-
-const SEED_ITEMS: ApprovalItem[] = [
-  makeSeedItem('APQ-001', 'INV-2024-0089', 'Invoice', 'Agent Invoice — Global Tours UK', 'Desert Safari Package × 4 guests', 12500, 'AED', 'Global Tours UK', 'Agent', 'Tour Package', 'Sara Ahmed', 'Sales', 'Manager Approval', 'High', false),
-  makeSeedItem('APQ-002', 'EXP-2024-0142', 'Expense', 'Fuel & Transport — June Fleet', 'Monthly fuel for 8 vehicles', 4800, 'AED', 'Gulf Transport Co.', 'Supplier', 'Fuel', 'Omar Khalid', 'Operations', 'Finance Approval', 'Normal', false),
-  makeSeedItem('APQ-003', 'INV-2024-0091', 'Invoice', 'Customer Invoice — Dubai Tour', '5-day Dubai Experience Package', 8750, 'AED', 'Mr. James Wilson', 'Customer', 'Tour Package', 'Aisha Rahman', 'Sales', 'Accounting Posting', 'Normal', false),
-  makeSeedItem('APQ-004', 'EXP-2024-0139', 'Expense', 'Hotel Payments — Marriott May', 'Hotel costs for May group bookings', 22000, 'AED', 'Marriott Hotels UAE', 'Supplier', 'Hotel Payment', 'Ravi Shankar', 'Operations', 'Correction Requested', 'High', false),
-  makeSeedItem('APQ-005', 'INV-2024-0085', 'Invoice', 'Supplier Invoice — Desert Safari', 'Activity tickets and guide fees', 6200, 'AED', 'Desert Safari LLC', 'Supplier', 'Activities', 'Sara Ahmed', 'Finance', 'Posted', 'Normal', true, 'JE-2024-0156'),
-  makeSeedItem('APQ-006', 'EXP-2024-0145', 'Expense', 'Marketing Campaign — Social Media', 'Instagram & Google Ads June', 9500, 'AED', 'Digital Media Agency', 'Supplier', 'Marketing', 'Layla Hassan', 'Marketing', 'Rejected', 'Normal', false),
-  makeSeedItem('APQ-007', 'INV-2024-0092', 'Invoice', 'Agent Invoice — Euro Holidays', 'Visa Services + Airport Transfers × 12 pax', 5400, 'USD', 'Euro Holidays', 'Agent', 'Visa Services', 'Sara Ahmed', 'Sales', 'Submitted', 'Urgent', false),
-  makeSeedItem('APQ-008', 'PO-2024-0033', 'Purchase', 'Purchase Order — Office Supplies', 'Monthly office supplies', 1200, 'AED', 'Al Futtaim Stationery', 'Supplier', 'Office Supplies', 'Fatima Al Zaabi', 'Admin', 'Draft', 'Low', false),
-];
-
-const SEED_RULES: ApprovalRule[] = [
-  { id: 'R1', name: 'High-Value Invoice → CFO', itemType: 'Invoice', amountThreshold: 10000, approver: 'CFO', isActive: true, requiresSecondApproval: true, secondApprover: 'Finance Director', createdAt: '2024-01-01' },
-  { id: 'R2', name: 'Standard Expense → Finance Manager', itemType: 'Expense', amountThreshold: 0, approver: 'Finance Manager', isActive: true, requiresSecondApproval: false, createdAt: '2024-01-01' },
-  { id: 'R3', name: 'Purchase Order → Finance Manager', itemType: 'Purchase', amountThreshold: 5000, approver: 'Finance Manager', isActive: true, requiresSecondApproval: false, createdAt: '2024-01-01' },
-  { id: 'R4', name: 'Journal Entry → Senior Accountant', itemType: 'Journal Entry', amountThreshold: 0, approver: 'Senior Accountant', isActive: true, requiresSecondApproval: true, secondApprover: 'Finance Manager', createdAt: '2024-01-01' },
-];
-
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 interface ApprovalContextType {
   items: ApprovalItem[];
   rules: ApprovalRule[];
   stats: ApprovalStats;
+  loading: boolean;
+  error: string | null;
   // Core workflow actions
   submitForApproval: (item: Omit<ApprovalItem, 'id' | 'status' | 'history' | 'glPosted' | 'attachments' | 'tags' | 'stageHistory' | 'managerRole' | 'managerLabel' | 'financeRole' | 'financeLabel' | 'requiresCFO' | 'vatAmount' | 'totalAmount'>) => string;
   advanceStage: (id: string, performedBy: string, notes?: string) => void;
@@ -274,31 +218,51 @@ const ApprovalContext = createContext<ApprovalContextType | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function ApprovalProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<ApprovalItem[]>(() => {
-    try { const s = localStorage.getItem('approvalQueue'); return s ? JSON.parse(s) : SEED_ITEMS; }
-    catch { return SEED_ITEMS; }
-  });
+  const [items, setItems] = useState<ApprovalItem[]>([]);
+  const [rules, setRules] = useState<ApprovalRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [rules, setRules] = useState<ApprovalRule[]>(() => {
-    try { const s = localStorage.getItem('approvalRules'); return s ? JSON.parse(s) : SEED_RULES; }
-    catch { return SEED_RULES; }
-  });
-
-  useEffect(() => { localStorage.setItem('approvalQueue', JSON.stringify(items)); }, [items]);
-  useEffect(() => { localStorage.setItem('approvalRules', JSON.stringify(rules)); }, [rules]);
-
-  // Mirror to DB-table keys
+  // ── Load from Supabase on mount ───────────────────────────────────────────
   useEffect(() => {
-    const requests = items.map(i => ({ id: i.id, module: i.type, record_id: i.refNumber, requested_by: i.submittedBy, status: i.status, created_at: i.submittedAt, amount: i.totalAmount, currency: i.currency }));
-    const actions = items.flatMap(i => i.history.map(h => ({ id: h.id, request_id: i.id, user_id: h.performedBy, action: h.action, comments: h.notes || '', timestamp: h.timestamp })));
-    localStorage.setItem('approval_requests', JSON.stringify(requests));
-    localStorage.setItem('approval_actions', JSON.stringify(actions));
-  }, [items]);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [itemsData, rulesData] = await Promise.all([
+          fetchApprovalItemsDb(),
+          fetchApprovalRulesDb(),
+        ]);
+        if (cancelled) return;
+        if (itemsData !== null) setItems(itemsData);
+        if (rulesData !== null) setRules(rulesData);
+        setError(null);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load approval data');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const addHistory = useCallback((item: ApprovalItem, action: string, performedBy: string, from: WorkflowStage, to: WorkflowStage, notes?: string): ApprovalItem => ({
     ...item, status: to,
     history: [...item.history, { id: `h${Date.now()}`, timestamp: new Date().toISOString(), action, performedBy, fromStatus: from, toStatus: to, notes }],
   }), []);
+
+  // Helper to update item and sync to DB
+  const updateItemAndSync = useCallback((updater: (prev: ApprovalItem[]) => ApprovalItem[]) => {
+    setItems(prev => {
+      const next = updater(prev);
+      // find changed items and sync them
+      next.forEach(item => {
+        const old = prev.find(p => p.id === item.id);
+        if (!old || old !== item) upsertApprovalItemDb(item).catch(() => {});
+      });
+      return next;
+    });
+  }, []);
 
   // ── Submit: Draft → Submitted ──────────────────────────────────────────────
   const submitForApproval = useCallback((itemData: Omit<ApprovalItem, 'id' | 'status' | 'history' | 'glPosted' | 'attachments' | 'tags' | 'stageHistory' | 'managerRole' | 'managerLabel' | 'financeRole' | 'financeLabel' | 'requiresCFO' | 'vatAmount' | 'totalAmount'>) => {
@@ -319,6 +283,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       ],
     };
     setItems(prev => [newItem, ...prev]);
+    upsertApprovalItemDb(newItem).catch(() => {});
     return id;
   }, []);
 
@@ -331,7 +296,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   // ── Advance: moves to next stage ───────────────────────────────────────────
   const advanceStage = useCallback((id: string, performedBy: string, notes?: string) => {
     const stageOrder: WorkflowStage[] = ['Draft', 'Submitted', 'Manager Approval', 'Finance Approval', 'Accounting Posting', 'Posted'];
-    setItems(prev => prev.map(item => {
+    updateItemAndSync(prev => prev.map(item => {
       if (item.id !== id) return item;
       const idx = stageOrder.indexOf(item.status);
       if (idx === -1 || idx >= stageOrder.length - 1) return item;
@@ -345,48 +310,47 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
         item.status === 'Accounting Posting' ? 'Posted to General Ledger' : 'Advanced';
       return addHistory(item, actionLabel, performedBy, item.status, nextStage, notes);
     }));
-  }, [addHistory]);
+  }, [addHistory, updateItemAndSync]);
 
   // ── Reject ─────────────────────────────────────────────────────────────────
   const rejectItem = useCallback((id: string, rejectedBy: string, reason: string) => {
-    setItems(prev => prev.map(item => {
+    updateItemAndSync(prev => prev.map(item => {
       if (item.id !== id) return item;
       return addHistory({ ...item, rejectionReason: reason }, `Rejected: ${reason}`, rejectedBy, item.status, 'Rejected', reason);
     }));
-  }, [addHistory]);
+  }, [addHistory, updateItemAndSync]);
 
   // ── Request Correction ─────────────────────────────────────────────────────
   const requestCorrection = useCallback((id: string, requestedBy: string, note: string) => {
-    setItems(prev => prev.map(item => {
+    updateItemAndSync(prev => prev.map(item => {
       if (item.id !== id) return item;
       return addHistory({ ...item, correctionNote: note }, `Correction requested: ${note}`, requestedBy, item.status, 'Correction Requested', note);
     }));
-  }, [addHistory]);
+  }, [addHistory, updateItemAndSync]);
 
   // ── Re-submit after correction/rejection ────────────────────────────────────
   const resubmit = useCallback((id: string, submittedBy: string) => {
-    setItems(prev => prev.map(item => {
+    updateItemAndSync(prev => prev.map(item => {
       if (item.id !== id) return item;
       if (!canTransition(item.status, 'Submitted')) return item;
       return addHistory({ ...item, correctionNote: '', rejectionReason: '' }, 'Re-submitted after correction', submittedBy, item.status, 'Submitted');
     }));
-  }, [addHistory]);
+  }, [addHistory, updateItemAndSync]);
 
   // ── Post to GL: only from Accounting Posting stage ─────────────────────────
   const postToGL = useCallback((id: string, postedBy: string): boolean => {
     let success = false;
     const glRef = `JE-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    setItems(prev => prev.map(item => {
+    updateItemAndSync(prev => prev.map(item => {
       if (item.id !== id) return item;
       if (item.status !== 'Accounting Posting') {
-        // Block — log the attempt
         return addHistory(item, `GL posting blocked — must reach Accounting Posting stage first (current: ${item.status})`, postedBy, item.status, item.status, 'Cannot post until Finance Approval is complete');
       }
       success = true;
       return addHistory({ ...item, glPosted: true, glEntryRef: glRef }, 'Posted to General Ledger', postedBy, 'Accounting Posting', 'Posted');
     }));
     return success;
-  }, [addHistory]);
+  }, [addHistory, updateItemAndSync]);
 
   // ── Legacy compat ──────────────────────────────────────────────────────────
   const approveItem = useCallback((id: string, approver: string, notes?: string) => {
@@ -394,8 +358,8 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [advanceStage]);
 
   const updateStatus = useCallback((id: string, status: WorkflowStage, performedBy: string, notes?: string) => {
-    setItems(prev => prev.map(item => item.id !== id ? item : addHistory(item, `Status → ${status}`, performedBy, item.status, status, notes)));
-  }, [addHistory]);
+    updateItemAndSync(prev => prev.map(item => item.id !== id ? item : addHistory(item, `Status → ${status}`, performedBy, item.status, status, notes)));
+  }, [addHistory, updateItemAndSync]);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const getByRef = useCallback((refNumber: string, type?: ApprovalItemType) =>
@@ -416,13 +380,21 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
   // ── Rules CRUD ─────────────────────────────────────────────────────────────
   const addRule = useCallback((rule: Omit<ApprovalRule, 'id' | 'createdAt'>) => {
-    setRules(prev => [...prev, { ...rule, id: `R${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] }]);
+    const newRule: ApprovalRule = { ...rule, id: `R${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
+    setRules(prev => [...prev, newRule]);
+    upsertApprovalRuleDb(newRule).catch(() => {});
   }, []);
   const updateRule = useCallback((id: string, update: Partial<ApprovalRule>) => {
-    setRules(prev => prev.map(r => r.id === id ? { ...r, ...update } : r));
+    setRules(prev => {
+      const next = prev.map(r => r.id === id ? { ...r, ...update } : r);
+      const changed = next.find(r => r.id === id);
+      if (changed) upsertApprovalRuleDb(changed).catch(() => {});
+      return next;
+    });
   }, []);
   const deleteRule = useCallback((id: string) => {
     setRules(prev => prev.filter(r => r.id !== id));
+    deleteApprovalRuleDb(id).catch(() => {});
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -443,7 +415,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
   return (
     <ApprovalContext.Provider value={{
-      items, rules, stats,
+      items, rules, stats, loading, error,
       submitForApproval, advanceStage, rejectItem, requestCorrection, resubmit, postToGL,
       ensureApprovalRequest, getByRef, canPostByRef, getPendingCount, getItemsByStage,
       addRule, updateRule, deleteRule,

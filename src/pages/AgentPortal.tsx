@@ -1,6 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Download, FileText, CreditCard, BarChart3, Eye, Printer, X } from 'lucide-react';
-import { bookings, invoices } from '../data/mockData';
+import { fetchEstimates, fetchInvoices } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import type { Invoice } from '../data/mockData';
+
+type Booking = {
+  id: string;
+  agent: string;
+  serviceType: string;
+  serviceDate: string;
+  sellingPrice: number;
+  vat: number;
+  currency: string;
+  paymentStatus: 'Paid' | 'Pending' | 'Partial';
+  customer: string;
+};
 
 const COMPANY = {
   name: 'Arabian Horizon Tourism LLC',
@@ -11,7 +25,7 @@ const COMPANY = {
   logo: '🌴',
 };
 
-type InvType = typeof invoices[0];
+type InvType = Invoice;
 
 function InvoicePreviewModal({ inv, onClose }: { inv: InvType; onClose: () => void }) {
   return (
@@ -134,6 +148,43 @@ function InvoicePreviewModal({ inv, onClose }: { inv: InvType; onClose: () => vo
 
 export default function AgentPortal() {
   const [viewInv, setViewInv] = useState<InvType | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [estData, invData] = await Promise.all([fetchEstimates(), fetchInvoices()]);
+        if (!cancelled) {
+          if (estData) {
+            setBookings(estData.map(e => ({
+              id: e.id,
+              agent: e.agent || '',
+              serviceType: e.serviceType,
+              serviceDate: e.serviceDate,
+              sellingPrice: e.total,
+              vat: e.vat,
+              currency: e.currency,
+              paymentStatus: 'Pending' as const,
+              customer: e.customer,
+            })));
+          }
+          if (invData) setInvoices(invData);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   const agentBookings = bookings.filter(b => b.agent === 'Global Tours UK');
   const agentInvoices = invoices.filter(i => i.party === 'Global Tours UK');

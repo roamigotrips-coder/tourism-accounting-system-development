@@ -1,20 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Save, Pause, Play, Trash2, PenSquare } from 'lucide-react';
-
-const LS_KEY = 'ap_retainers_v1';
-
-type Retainer = {
-  id: string;
-  customer: string;
-  description?: string;
-  amount: number; // per period
-  currency: string;
-  interval: 'Monthly' | 'Quarterly' | 'Yearly';
-  startDate: string; // yyyy-mm-dd
-  endDate?: string;
-  status: 'Active' | 'Paused' | 'Cancelled';
-  nextInvoiceOn: string; // computed
-};
+import {
+  fetchRetainers as fetchRetainersDb, upsertRetainer as upsertRetainerDb, deleteRetainerDb,
+  type Retainer,
+} from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 function nextDate(start: Date, interval: Retainer['interval']): Date {
   const d = new Date(start);
@@ -29,14 +19,23 @@ export default function Retainers() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Retainer | null>(null);
   const [form, setForm] = useState<Partial<Retainer>>({ currency: 'AED', interval: 'Monthly', status: 'Active', startDate: new Date().toISOString().split('T')[0] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) setItems(JSON.parse(raw));
-    } catch {}
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchRetainersDb();
+        if (!cancelled && data) setItems(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load retainers');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
-  useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify(items)); }, [items]);
 
   const kpis = useMemo(() => {
     const active = items.filter(i => i.status === 'Active');
@@ -66,11 +65,23 @@ export default function Retainers() {
     };
     if (editing) setItems(prev => prev.map(i => i.id === editing.id ? obj : i));
     else setItems(prev => [obj, ...prev]);
+    upsertRetainerDb(obj).catch(() => {});
     setShowModal(false);
   };
 
-  const togglePause = (id: string) => setItems(prev => prev.map(i => i.id===id ? { ...i, status: i.status==='Paused'?'Active':'Paused' } : i));
-  const remove = (id: string) => setItems(prev => prev.filter(i => i.id!==id));
+  const togglePause = (id: string) => setItems(prev => prev.map(i => {
+    if (i.id !== id) return i;
+    const updated = { ...i, status: (i.status === 'Paused' ? 'Active' : 'Paused') as Retainer['status'] };
+    upsertRetainerDb(updated).catch(() => {});
+    return updated;
+  }));
+  const remove = (id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
+    deleteRetainerDb(id).catch(() => {});
+  };
+
+  if (loading) return <LoadingSpinner message="Loading retainers..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

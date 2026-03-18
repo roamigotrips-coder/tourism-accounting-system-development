@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react';
 import { Upload, Link2, Bell, Check, AlertTriangle, RefreshCw, Settings } from 'lucide-react';
-import { suppliers } from '../data/mockData';
+import { fetchSuppliers } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import type { Supplier } from '../data/mockData';
 
 const automationRules = [
   { id: 'AR-001', name: 'Hotel Cost Allocation', supplier: 'Marriott Hotels UAE', status: 'Active', lastRun: '2024-03-18 09:30', matches: 12 },
@@ -21,6 +24,28 @@ const paymentReminders = [
 ];
 
 export default function SupplierAuto() {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchSuppliers();
+        if (!cancelled && data) setSuppliers(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+  if (error) return <ErrorBanner message={error} />;
+
   return (
     <div className="space-y-6">
       <div>

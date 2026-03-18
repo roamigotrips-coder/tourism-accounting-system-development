@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Truck, Fuel, DollarSign, User, Plus, X, Save } from 'lucide-react';
-import { vehicles } from '../data/mockData';
+import type { Vehicle } from '../data/mockData';
+import { fetchVehicles, upsertVehicle } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const vehicleTypes = ['Sedan', 'SUV', 'Luxury SUV', 'Van (14-seater)', 'Van (7-seater)', 'Bus (35-seater)', 'Bus (50-seater)', 'Coaster'];
@@ -19,8 +21,25 @@ const emptyForm: VehicleForm = { plate: '', type: 'Sedan', driver: '', status: '
 export default function Transport() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<VehicleForm>(emptyForm);
-  const [vehicleList, setVehicleList] = useState(vehicles);
+  const [vehicleList, setVehicleList] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('All');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchVehicles();
+        if (!cancelled && data) setVehicleList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const totalRevenue = vehicleList.reduce((s, v) => s + v.revenue, 0);
   const totalFuel = vehicleList.reduce((s, v) => s + v.fuelCost, 0);
@@ -53,9 +72,13 @@ export default function Transport() {
       revenue: 0,
     };
     setVehicleList(prev => [newVehicle, ...prev]);
+    upsertVehicle(newVehicle).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading vehicles..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

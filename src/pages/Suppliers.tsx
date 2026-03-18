@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Plus, Upload, Bell, ArrowRight, X, Save } from 'lucide-react';
-import { suppliers } from '../data/mockData';
+import type { Supplier } from '../data/mockData';
+import { fetchSuppliers, upsertSupplier } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const supplierTypes = ['Hotel', 'Transport', 'Activity Provider', 'Tour Guide', 'Tickets', 'Visa Services'];
@@ -25,8 +27,25 @@ export default function Suppliers() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<SupplierForm>(emptyForm);
-  const [supplierList, setSupplierList] = useState(suppliers);
+  const [supplierList, setSupplierList] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState('All');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchSuppliers();
+        if (!cancelled && data) setSupplierList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = supplierList.filter(s =>
     (typeFilter === 'All' || s.type === typeFilter) &&
@@ -53,9 +72,13 @@ export default function Suppliers() {
       paidAmount: 0,
     };
     setSupplierList(prev => [newSupplier, ...prev] as typeof prev);
+    upsertSupplier(newSupplier as Supplier).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading suppliers..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

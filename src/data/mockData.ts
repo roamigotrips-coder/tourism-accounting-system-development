@@ -146,7 +146,7 @@ export type Employee = {
   salary: number;
   attendance: number;
   joinDate: string;
-  status: 'Active' | 'On Leave';
+  status: 'Active' | 'On Leave' | 'Terminated';
 };
 export const employees: Employee[] = [];
 

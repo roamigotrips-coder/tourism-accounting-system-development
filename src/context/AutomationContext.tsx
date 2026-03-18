@@ -1,4 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  fetchWorkflows as fetchWorkflowsDb,
+  upsertWorkflow as upsertWorkflowDb,
+  deleteWorkflowDb,
+  fetchAutomationLogs as fetchAutomationLogsDb,
+  insertAutomationLog as insertAutomationLogDb,
+} from '../lib/supabaseSync';
 
 export type AutomationEvent =
   | { type: 'ESTIMATE_SUBMITTED'; payload: { id: string; amount: number; serviceType: string; agent?: string; customer?: string } }
@@ -25,18 +32,6 @@ export type Workflow = {
   createdAt: string;
 };
 
-function load<T>(key: string, fallback: T): T {
-  try {
-    const s = localStorage.getItem(key);
-    return s ? (JSON.parse(s) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-function save<T>(key: string, v: T) {
-  try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
-}
-
 const AutomationCtx = createContext<{
   workflows: Workflow[];
   addWorkflow: (w: Omit<Workflow, 'id' | 'createdAt'>) => void;
@@ -44,21 +39,59 @@ const AutomationCtx = createContext<{
   deleteWorkflow: (id: string) => void;
   publish: (evt: AutomationEvent) => void;
   logs: { id: string; time: string; message: string }[];
-}>({ workflows: [], addWorkflow: () => {}, updateWorkflow: () => {}, deleteWorkflow: () => {}, publish: () => {}, logs: [] });
+  loading: boolean;
+  error: string | null;
+}>({ workflows: [], addWorkflow: () => {}, updateWorkflow: () => {}, deleteWorkflow: () => {}, publish: () => {}, logs: [], loading: true, error: null });
 
 export function AutomationProvider({ children }: { children: React.ReactNode }) {
-  const [workflows, setWorkflows] = useState<Workflow[]>(() => load<Workflow[]>('automation.workflows', []));
-  const [logs, setLogs] = useState<{ id: string; time: string; message: string }[]>(() => load('automation.logs', []));
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [logs, setLogs] = useState<{ id: string; time: string; message: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => save('automation.workflows', workflows), [workflows]);
-  useEffect(() => save('automation.logs', logs), [logs]);
+  // ── Load from Supabase on mount ───────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [wfs, autoLogs] = await Promise.all([
+          fetchWorkflowsDb(),
+          fetchAutomationLogsDb(),
+        ]);
+        if (cancelled) return;
+        if (wfs !== null) setWorkflows(wfs);
+        if (autoLogs !== null) setLogs(autoLogs);
+        setError(null);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load automation data');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const addWorkflow = (w: Omit<Workflow, 'id' | 'createdAt'>) => {
     const id = 'WF-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-    setWorkflows((prev) => [{ ...w, id, createdAt: new Date().toISOString() }, ...prev]);
+    const newWf: Workflow = { ...w, id, createdAt: new Date().toISOString() };
+    setWorkflows((prev) => [newWf, ...prev]);
+    upsertWorkflowDb(newWf).catch(() => {});
   };
-  const updateWorkflow = (id: string, patch: Partial<Workflow>) => setWorkflows((prev) => prev.map(w => w.id === id ? { ...w, ...patch } : w));
-  const deleteWorkflow = (id: string) => setWorkflows((prev) => prev.filter(w => w.id !== id));
+
+  const updateWorkflow = (id: string, patch: Partial<Workflow>) => {
+    setWorkflows((prev) => {
+      const next = prev.map(w => w.id === id ? { ...w, ...patch } : w);
+      const changed = next.find(w => w.id === id);
+      if (changed) upsertWorkflowDb(changed).catch(() => {});
+      return next;
+    });
+  };
+
+  const deleteWorkflow = (id: string) => {
+    setWorkflows((prev) => prev.filter(w => w.id !== id));
+    deleteWorkflowDb(id).catch(() => {});
+  };
 
   const passConditions = (evt: AutomationEvent, conditions: Condition[]) => {
     const flat: Record<string, any> = { ...(evt as any).payload, type: evt.type };
@@ -77,14 +110,20 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
 
   const runActions = (_evt: AutomationEvent, actions: Action[]) => {
     actions.forEach(a => {
+      let message = '';
       if (a.type === 'SEND_EMAIL') {
-        setLogs(prev => [{ id: crypto.randomUUID(), time: new Date().toISOString(), message: `Email to ${a.to}: ${a.subject}` }, ...prev]);
+        message = `Email to ${a.to}: ${a.subject}`;
       } else if (a.type === 'CREATE_TASK') {
-        setLogs(prev => [{ id: crypto.randomUUID(), time: new Date().toISOString(), message: `Task: ${a.title} assigned to ${a.assignee || 'Unassigned'}` }, ...prev]);
+        message = `Task: ${a.title} assigned to ${a.assignee || 'Unassigned'}`;
       } else if (a.type === 'ADD_TAG') {
-        setLogs(prev => [{ id: crypto.randomUUID(), time: new Date().toISOString(), message: `Tag added: ${a.tag}` }, ...prev]);
+        message = `Tag added: ${a.tag}`;
       } else if (a.type === 'MOVE_TO_STAGE') {
-        setLogs(prev => [{ id: crypto.randomUUID(), time: new Date().toISOString(), message: `Moved ${a.entity} to stage: ${a.stage}` }, ...prev]);
+        message = `Moved ${a.entity} to stage: ${a.stage}`;
+      }
+      if (message) {
+        const entry = { id: crypto.randomUUID(), time: new Date().toISOString(), message };
+        setLogs(prev => [entry, ...prev]);
+        insertAutomationLogDb(entry).catch(() => {});
       }
     });
   };
@@ -95,7 +134,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
     eligible.forEach(w => runActions(evt, w.actions));
   };
 
-  const value = useMemo(() => ({ workflows, addWorkflow, updateWorkflow, deleteWorkflow, publish, logs }), [workflows, logs]);
+  const value = useMemo(() => ({ workflows, addWorkflow, updateWorkflow, deleteWorkflow, publish, logs, loading, error }), [workflows, logs, loading, error]);
   return <AutomationCtx.Provider value={value}>{children}</AutomationCtx.Provider>;
 }
 

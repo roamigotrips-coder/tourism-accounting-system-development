@@ -16,6 +16,10 @@ export async function testConnection(): Promise<boolean> {
   return !error;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. ACCOUNTING CORE
+// ══════════════════════════════════════════════════════════════════════════════
+
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 
 function dbToAccount(row: any): Account {
@@ -59,6 +63,7 @@ export async function fetchAccounts(): Promise<Account[] | null> {
 }
 
 export async function upsertAccounts(accounts: Account[]): Promise<void> {
+  if (accounts.length === 0) return;
   await supabase.from('accounts').upsert(accounts.map(accountToDb), { onConflict: 'id' });
 }
 
@@ -169,16 +174,19 @@ export async function fetchJournalEntries(): Promise<JournalEntry[] | null> {
 
 export async function upsertJournalEntry(je: JournalEntry): Promise<void> {
   await supabase.from('journal_entries').upsert(entryToDb(je), { onConflict: 'id' });
-  // Delete old lines and re-insert (simplest approach for updates)
   await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', je.id);
   if (je.lines.length > 0) {
     await supabase.from('journal_entry_lines').insert(je.lines.map(l => lineToDb(l, je.id)));
   }
 }
 
+export async function upsertJournalEntries(entries: JournalEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  await supabase.from('journal_entries').upsert(entries.map(entryToDb), { onConflict: 'id' });
+}
+
 export async function deleteJournalEntry(id: string): Promise<void> {
   await supabase.from('journal_entries').delete().eq('id', id);
-  // Lines are deleted via CASCADE
 }
 
 // ─── Accounting Periods ───────────────────────────────────────────────────────
@@ -216,6 +224,7 @@ export async function fetchPeriods(): Promise<AccountingPeriod[] | null> {
 }
 
 export async function upsertPeriods(periods: AccountingPeriod[]): Promise<void> {
+  if (periods.length === 0) return;
   await supabase.from('accounting_periods').upsert(periods.map(periodToDb), { onConflict: 'id' });
 }
 
@@ -329,5 +338,1482 @@ export async function upsertEstimate(e: BookingEstimate): Promise<void> {
 }
 
 export async function upsertEstimates(estimates: BookingEstimate[]): Promise<void> {
+  if (estimates.length === 0) return;
   await supabase.from('booking_estimates').upsert(estimates.map(estimateToDb), { onConflict: 'id' });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 2. APPROVAL WORKFLOW
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { ApprovalItem, ApprovalHistoryEvent, ApprovalRule } from '../context/ApprovalContext';
+
+function dbToApprovalItem(row: any, history: any[]): ApprovalItem {
+  return {
+    id:              row.id,
+    refNumber:       row.ref_number,
+    type:            row.type,
+    title:           row.title,
+    description:     row.description ?? '',
+    amount:          Number(row.amount),
+    currency:        row.currency,
+    vatAmount:       Number(row.vat_amount),
+    totalAmount:     Number(row.total_amount),
+    submittedBy:     row.submitted_by,
+    submittedAt:     row.submitted_at,
+    submittedByDept: row.submitted_by_dept ?? '',
+    status:          row.status,
+    priority:        row.priority,
+    dueDate:         row.due_date ?? undefined,
+    party:           row.party ?? '',
+    partyType:       row.party_type ?? '',
+    category:        row.category ?? undefined,
+    notes:           row.notes ?? undefined,
+    attachments:     [],
+    history:         history.map(dbToApprovalHistory),
+    glPosted:        row.gl_posted,
+    glEntryRef:      row.gl_entry_ref ?? undefined,
+    correctionNote:  row.correction_note ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+    tags:            row.tags ?? [],
+    sourceData:      row.source_data ?? undefined,
+    managerRole:     row.manager_role ?? '',
+    managerLabel:    row.manager_label ?? '',
+    financeRole:     row.finance_role ?? '',
+    financeLabel:    row.finance_label ?? '',
+    requiresCFO:     row.requires_cfo ?? false,
+    stageHistory:    row.stage_history ?? [],
+  };
+}
+
+function approvalItemToDb(item: ApprovalItem) {
+  return {
+    id:                item.id,
+    ref_number:        item.refNumber,
+    type:              item.type,
+    title:             item.title,
+    description:       item.description,
+    amount:            item.amount,
+    currency:          item.currency,
+    vat_amount:        item.vatAmount,
+    total_amount:      item.totalAmount,
+    submitted_by:      item.submittedBy,
+    submitted_at:      item.submittedAt,
+    submitted_by_dept: item.submittedByDept,
+    status:            item.status,
+    priority:          item.priority,
+    due_date:          item.dueDate ?? null,
+    party:             item.party,
+    party_type:        item.partyType,
+    category:          item.category ?? null,
+    notes:             item.notes ?? null,
+    gl_posted:         item.glPosted,
+    gl_entry_ref:      item.glEntryRef ?? null,
+    correction_note:   item.correctionNote ?? null,
+    rejection_reason:  item.rejectionReason ?? null,
+    tags:              item.tags,
+    source_data:       item.sourceData ?? null,
+    manager_role:      item.managerRole,
+    manager_label:     item.managerLabel,
+    finance_role:      item.financeRole,
+    finance_label:     item.financeLabel,
+    requires_cfo:      item.requiresCFO,
+    stage_history:     item.stageHistory,
+  };
+}
+
+function dbToApprovalHistory(row: any): ApprovalHistoryEvent {
+  return {
+    id:          row.id,
+    timestamp:   row.timestamp,
+    action:      row.action,
+    performedBy: row.performed_by,
+    fromStatus:  row.from_status,
+    toStatus:    row.to_status,
+    notes:       row.notes ?? undefined,
+    stage:       row.stage ?? undefined,
+  };
+}
+
+function approvalHistoryToDb(h: ApprovalHistoryEvent, itemId: string) {
+  return {
+    id:           h.id,
+    item_id:      itemId,
+    timestamp:    h.timestamp,
+    action:       h.action,
+    performed_by: h.performedBy,
+    from_status:  h.fromStatus,
+    to_status:    h.toStatus,
+    notes:        h.notes ?? null,
+    stage:        h.stage ?? null,
+  };
+}
+
+export async function fetchApprovalItems(): Promise<ApprovalItem[] | null> {
+  const [{ data: items, error: e1 }, { data: history, error: e2 }] = await Promise.all([
+    supabase.from('approval_items').select('*').order('submitted_at', { ascending: false }),
+    supabase.from('approval_history').select('*').order('timestamp'),
+  ]);
+  if (e1 || e2 || !items || !history) return null;
+  return items.map(row => dbToApprovalItem(row, history.filter((h: any) => h.item_id === row.id)));
+}
+
+export async function upsertApprovalItem(item: ApprovalItem): Promise<void> {
+  await supabase.from('approval_items').upsert(approvalItemToDb(item), { onConflict: 'id' });
+  await supabase.from('approval_history').delete().eq('item_id', item.id);
+  if (item.history.length > 0) {
+    await supabase.from('approval_history').insert(item.history.map(h => approvalHistoryToDb(h, item.id)));
+  }
+}
+
+export async function upsertApprovalItems(items: ApprovalItem[]): Promise<void> {
+  if (items.length === 0) return;
+  await supabase.from('approval_items').upsert(items.map(approvalItemToDb), { onConflict: 'id' });
+  const allHistory = items.flatMap(item => item.history.map(h => approvalHistoryToDb(h, item.id)));
+  if (allHistory.length > 0) {
+    const itemIds = items.map(i => i.id);
+    await supabase.from('approval_history').delete().in('item_id', itemIds);
+    await supabase.from('approval_history').insert(allHistory);
+  }
+}
+
+function dbToApprovalRule(row: any): ApprovalRule {
+  return {
+    id:                     row.id,
+    name:                   row.name,
+    itemType:               row.item_type,
+    amountThreshold:        Number(row.amount_threshold),
+    approver:               row.approver,
+    isActive:               row.is_active,
+    requiresSecondApproval: row.requires_second_approval,
+    secondApprover:         row.second_approver ?? undefined,
+    createdAt:              row.created_at,
+  };
+}
+
+function approvalRuleToDb(r: ApprovalRule) {
+  return {
+    id:                       r.id,
+    name:                     r.name,
+    item_type:                r.itemType,
+    amount_threshold:         r.amountThreshold,
+    approver:                 r.approver,
+    is_active:                r.isActive,
+    requires_second_approval: r.requiresSecondApproval,
+    second_approver:          r.secondApprover ?? null,
+    created_at:               r.createdAt,
+  };
+}
+
+export async function fetchApprovalRules(): Promise<ApprovalRule[] | null> {
+  const { data, error } = await supabase.from('approval_rules').select('*');
+  if (error || !data) return null;
+  return data.map(dbToApprovalRule);
+}
+
+export async function upsertApprovalRules(rules: ApprovalRule[]): Promise<void> {
+  if (rules.length === 0) return;
+  await supabase.from('approval_rules').upsert(rules.map(approvalRuleToDb), { onConflict: 'id' });
+}
+
+export async function upsertApprovalRule(rule: ApprovalRule): Promise<void> {
+  await supabase.from('approval_rules').upsert(approvalRuleToDb(rule), { onConflict: 'id' });
+}
+
+export async function deleteApprovalRuleDb(id: string): Promise<void> {
+  await supabase.from('approval_rules').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3. AUDIT TRAIL
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { AuditLog } from '../context/AuditTrailContext';
+
+function dbToAuditLog(row: any): AuditLog {
+  return {
+    id:           row.id,
+    timestamp:    row.timestamp,
+    userId:       row.user_id,
+    userName:     row.user_name,
+    userRole:     row.user_role ?? '',
+    action:       row.action,
+    module:       row.module,
+    entityId:     row.entity_id,
+    entityType:   row.entity_type,
+    entityLabel:  row.entity_label ?? '',
+    description:  row.description ?? '',
+    oldValues:    row.old_values ?? undefined,
+    newValues:    row.new_values ?? undefined,
+    diffs:        row.diffs ?? undefined,
+    ipAddress:    row.ip_address ?? '',
+    sessionId:    row.session_id ?? '',
+    tags:         row.tags ?? [],
+    severity:     row.severity ?? 'info',
+    isReversible: row.is_reversible ?? false,
+    metadata:     row.metadata ?? undefined,
+  };
+}
+
+function auditLogToDb(log: AuditLog) {
+  return {
+    id:            log.id,
+    timestamp:     log.timestamp,
+    user_id:       log.userId,
+    user_name:     log.userName,
+    user_role:     log.userRole,
+    action:        log.action,
+    module:        log.module,
+    entity_id:     log.entityId,
+    entity_type:   log.entityType,
+    entity_label:  log.entityLabel,
+    description:   log.description,
+    old_values:    log.oldValues ?? null,
+    new_values:    log.newValues ?? null,
+    diffs:         log.diffs ?? null,
+    ip_address:    log.ipAddress,
+    session_id:    log.sessionId,
+    tags:          log.tags,
+    severity:      log.severity,
+    is_reversible: log.isReversible,
+    metadata:      log.metadata ?? null,
+  };
+}
+
+export async function fetchAuditLogs(): Promise<AuditLog[] | null> {
+  const { data, error } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(500);
+  if (error || !data) return null;
+  return data.map(dbToAuditLog);
+}
+
+export async function insertAuditLog(log: AuditLog): Promise<void> {
+  await supabase.from('audit_logs').insert(auditLogToDb(log));
+}
+
+export async function upsertAuditLogs(logs: AuditLog[]): Promise<void> {
+  if (logs.length === 0) return;
+  await supabase.from('audit_logs').upsert(logs.map(auditLogToDb), { onConflict: 'id' });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. BANK FEEDS & RECONCILIATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { BankConnection, FeedTransaction, FeedSchedule, WebhookEvent } from '../utils/bankFeedService';
+import type { BookTx, RecMatch } from '../utils/reconciliationEngine';
+
+function dbToBankConnection(row: any): BankConnection {
+  return {
+    id:               row.id,
+    providerId:       row.provider_id,
+    providerName:     row.provider_name,
+    accountName:      row.account_name,
+    accountNumber:    row.account_number,
+    accountType:      row.account_type,
+    currency:         row.currency,
+    balance:          Number(row.balance),
+    availableBalance: Number(row.available_balance),
+    status:           row.status,
+    lastSync:         row.last_sync,
+    nextSync:         row.next_sync,
+    syncFrequency:    row.sync_frequency,
+    autoMatch:        row.auto_match,
+    autoPost:         row.auto_post,
+    totalImported:    row.total_imported,
+    totalMatched:     row.total_matched,
+    connectedAt:      row.connected_at,
+    consentExpiry:    row.consent_expiry,
+    errorMessage:     row.error_message ?? undefined,
+  };
+}
+
+function bankConnectionToDb(c: BankConnection) {
+  return {
+    id:                c.id,
+    provider_id:       c.providerId,
+    provider_name:     c.providerName,
+    account_name:      c.accountName,
+    account_number:    c.accountNumber,
+    account_type:      c.accountType,
+    currency:          c.currency,
+    balance:           c.balance,
+    available_balance: c.availableBalance,
+    status:            c.status,
+    last_sync:         c.lastSync ?? null,
+    next_sync:         c.nextSync ?? null,
+    sync_frequency:    c.syncFrequency,
+    auto_match:        c.autoMatch,
+    auto_post:         c.autoPost,
+    total_imported:    c.totalImported,
+    total_matched:     c.totalMatched,
+    connected_at:      c.connectedAt,
+    consent_expiry:    c.consentExpiry ?? null,
+    error_message:     c.errorMessage ?? null,
+  };
+}
+
+export async function fetchBankConnections(): Promise<BankConnection[] | null> {
+  const { data, error } = await supabase.from('bank_connections').select('*');
+  if (error || !data) return null;
+  return data.map(dbToBankConnection);
+}
+
+export async function upsertBankConnection(c: BankConnection): Promise<void> {
+  await supabase.from('bank_connections').upsert(bankConnectionToDb(c), { onConflict: 'id' });
+}
+
+export async function upsertBankConnections(conns: BankConnection[]): Promise<void> {
+  if (conns.length === 0) return;
+  await supabase.from('bank_connections').upsert(conns.map(bankConnectionToDb), { onConflict: 'id' });
+}
+
+export async function deleteBankConnection(id: string): Promise<void> {
+  await supabase.from('bank_connections').delete().eq('id', id);
+}
+
+function dbToFeedTransaction(row: any): FeedTransaction {
+  return {
+    id:               row.id,
+    feedId:           row.feed_id,
+    connectionId:     row.connection_id,
+    providerRef:      row.provider_ref,
+    date:             row.date,
+    description:      row.description,
+    reference:        row.reference,
+    debit:            Number(row.debit),
+    credit:           Number(row.credit),
+    balance:          Number(row.balance),
+    status:           row.status,
+    matchedWith:      row.matched_with ?? undefined,
+    source:           row.source,
+    bank:             row.bank,
+    rawData:          row.raw_data ?? {},
+    enriched:         row.enriched ?? false,
+    category:         row.category ?? undefined,
+    merchantName:     row.merchant_name ?? undefined,
+    merchantCategory: row.merchant_category ?? undefined,
+    pending:          row.pending ?? false,
+    reversed:         row.reversed ?? false,
+  };
+}
+
+function feedTransactionToDb(t: FeedTransaction) {
+  return {
+    id:                t.id,
+    feed_id:           t.feedId ?? null,
+    connection_id:     t.connectionId,
+    provider_ref:      t.providerRef ?? null,
+    date:              t.date,
+    description:       t.description,
+    reference:         t.reference ?? null,
+    debit:             t.debit,
+    credit:            t.credit,
+    balance:           t.balance,
+    status:            t.status,
+    matched_with:      t.matchedWith ?? null,
+    source:            t.source,
+    bank:              t.bank ?? null,
+    raw_data:          t.rawData ?? {},
+    enriched:          t.enriched ?? false,
+    category:          t.category ?? null,
+    merchant_name:     t.merchantName ?? null,
+    merchant_category: t.merchantCategory ?? null,
+    pending:           t.pending ?? false,
+    reversed:          t.reversed ?? false,
+  };
+}
+
+export async function fetchFeedTransactions(): Promise<FeedTransaction[] | null> {
+  const { data, error } = await supabase.from('feed_transactions').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToFeedTransaction);
+}
+
+export async function upsertFeedTransactions(txs: FeedTransaction[]): Promise<void> {
+  if (txs.length === 0) return;
+  await supabase.from('feed_transactions').upsert(txs.map(feedTransactionToDb), { onConflict: 'id' });
+}
+
+export async function upsertFeedTransaction(t: FeedTransaction): Promise<void> {
+  await supabase.from('feed_transactions').upsert(feedTransactionToDb(t), { onConflict: 'id' });
+}
+
+function dbToBookTx(row: any): BookTx {
+  return {
+    id:          row.id,
+    date:        row.date,
+    description: row.description,
+    reference:   row.reference,
+    amount:      Number(row.amount),
+    type:        row.type,
+    status:      row.status,
+    matchedWith: row.matched_with ?? undefined,
+    source:      row.source ?? undefined,
+    category:    row.category ?? undefined,
+  };
+}
+
+function bookTxToDb(t: BookTx) {
+  return {
+    id:           t.id,
+    date:         t.date,
+    description:  t.description,
+    reference:    t.reference ?? null,
+    amount:       t.amount,
+    type:         t.type,
+    status:       t.status,
+    matched_with: t.matchedWith ?? null,
+    source:       t.source ?? null,
+    category:     t.category ?? null,
+  };
+}
+
+export async function fetchBookTransactions(): Promise<BookTx[] | null> {
+  const { data, error } = await supabase.from('book_transactions').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToBookTx);
+}
+
+export async function upsertBookTransactions(txs: BookTx[]): Promise<void> {
+  if (txs.length === 0) return;
+  await supabase.from('book_transactions').upsert(txs.map(bookTxToDb), { onConflict: 'id' });
+}
+
+function dbToRecMatch(row: any): RecMatch {
+  return {
+    id:         row.id,
+    bankTxId:   row.bank_tx_id,
+    bookTxId:   row.book_tx_id,
+    matchedBy:  row.matched_by,
+    matchedAt:  row.matched_at,
+    difference: Number(row.difference),
+    method:     row.method,
+    confidence: row.confidence,
+    score:      row.score,
+    reasons:    row.reasons ?? [],
+    note:       row.note ?? undefined,
+  };
+}
+
+function recMatchToDb(m: RecMatch) {
+  return {
+    id:          m.id,
+    bank_tx_id:  m.bankTxId,
+    book_tx_id:  m.bookTxId,
+    matched_by:  m.matchedBy,
+    matched_at:  m.matchedAt,
+    difference:  m.difference,
+    method:      m.method,
+    confidence:  m.confidence,
+    score:       m.score,
+    reasons:     m.reasons,
+    note:        m.note ?? null,
+  };
+}
+
+export async function fetchRecMatches(): Promise<RecMatch[] | null> {
+  const { data, error } = await supabase.from('rec_matches').select('*');
+  if (error || !data) return null;
+  return data.map(dbToRecMatch);
+}
+
+export async function upsertRecMatches(matches: RecMatch[]): Promise<void> {
+  if (matches.length === 0) return;
+  await supabase.from('rec_matches').upsert(matches.map(recMatchToDb), { onConflict: 'id' });
+}
+
+export async function insertSyncLog(log: any): Promise<void> {
+  await supabase.from('sync_logs').insert({
+    id:               log.id || `SL-${Date.now()}`,
+    connection_id:    log.connectionId,
+    started_at:       log.startedAt,
+    completed_at:     log.completedAt ?? null,
+    status:           log.status,
+    new_transactions: log.newTransactions ?? 0,
+    auto_matched:     log.autoMatched ?? 0,
+    errors:           log.errors ?? [],
+    provider:         log.provider ?? null,
+  });
+}
+
+export async function fetchFeedSchedules(): Promise<FeedSchedule[] | null> {
+  const { data, error } = await supabase.from('feed_schedules').select('*');
+  if (error || !data) return null;
+  return data.map((row: any) => ({
+    connectionId: row.connection_id,
+    frequency:    row.frequency,
+    lastRun:      row.last_run ?? '',
+    nextRun:      row.next_run ?? '',
+    enabled:      row.enabled,
+    retryCount:   row.retry_count,
+    maxRetries:   row.max_retries,
+  }));
+}
+
+export async function upsertFeedSchedule(s: FeedSchedule): Promise<void> {
+  await supabase.from('feed_schedules').upsert({
+    connection_id: s.connectionId,
+    frequency:     s.frequency,
+    last_run:      s.lastRun ?? null,
+    next_run:      s.nextRun ?? null,
+    enabled:       s.enabled,
+    retry_count:   s.retryCount,
+    max_retries:   s.maxRetries,
+  }, { onConflict: 'connection_id' });
+}
+
+export async function fetchWebhookEvents(): Promise<WebhookEvent[] | null> {
+  const { data, error } = await supabase.from('webhook_events').select('*').order('received_at', { ascending: false }).limit(100);
+  if (error || !data) return null;
+  return data.map((row: any) => ({
+    id:           row.id,
+    type:         row.type,
+    connectionId: row.connection_id,
+    payload:      row.payload,
+    receivedAt:   row.received_at,
+    processed:    row.processed,
+  }));
+}
+
+export async function insertWebhookEvent(e: WebhookEvent): Promise<void> {
+  await supabase.from('webhook_events').insert({
+    id:            e.id,
+    type:          e.type,
+    connection_id: e.connectionId,
+    payload:       e.payload,
+    received_at:   e.receivedAt,
+    processed:     e.processed,
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. MULTI-CURRENCY
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { Currency, CurrencyRate } from '../context/CurrencyContext';
+
+export async function fetchCurrencies(): Promise<Currency[] | null> {
+  const { data, error } = await supabase.from('currencies').select('*');
+  if (error || !data) return null;
+  return data.map((row: any) => ({ code: row.code, symbol: row.symbol, name: row.name, enabled: row.enabled }));
+}
+
+export async function upsertCurrencies(currencies: Currency[]): Promise<void> {
+  if (currencies.length === 0) return;
+  await supabase.from('currencies').upsert(currencies.map(c => ({ code: c.code, symbol: c.symbol, name: c.name, enabled: c.enabled })), { onConflict: 'code' });
+}
+
+export async function fetchCurrencyRates(): Promise<CurrencyRate[] | null> {
+  const { data, error } = await supabase.from('currency_rates').select('*');
+  if (error || !data) return null;
+  return data.map((row: any) => ({ code: row.code, rate: Number(row.rate), date: row.date, source: row.source ?? 'Manual' }));
+}
+
+export async function upsertCurrencyRates(rates: CurrencyRate[]): Promise<void> {
+  if (rates.length === 0) return;
+  await supabase.from('currency_rates').upsert(rates.map(r => ({ code: r.code, rate: r.rate, date: r.date, source: r.source ?? 'Manual' })), { onConflict: 'code' });
+}
+
+export async function fetchSetting(key: string): Promise<string | null> {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', key).single();
+  return data?.value ?? null;
+}
+
+export async function saveSetting(key: string, value: string): Promise<void> {
+  await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. AUTOMATION (Workflows)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { Workflow } from '../context/AutomationContext';
+
+export async function fetchWorkflows(): Promise<Workflow[] | null> {
+  const { data, error } = await supabase.from('workflows').select('*').order('created_at', { ascending: false });
+  if (error || !data) return null;
+  return data.map((row: any) => ({ id: row.id, name: row.name, description: row.description ?? undefined, enabled: row.enabled, trigger: row.trigger, conditions: row.conditions ?? [], actions: row.actions ?? [], createdAt: row.created_at }));
+}
+
+export async function upsertWorkflow(w: Workflow): Promise<void> {
+  await supabase.from('workflows').upsert({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt }, { onConflict: 'id' });
+}
+
+export async function upsertWorkflows(workflows: Workflow[]): Promise<void> {
+  if (workflows.length === 0) return;
+  await supabase.from('workflows').upsert(workflows.map(w => ({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt })), { onConflict: 'id' });
+}
+
+export async function deleteWorkflowDb(id: string): Promise<void> {
+  await supabase.from('workflows').delete().eq('id', id);
+}
+
+export async function fetchAutomationLogs(): Promise<{ id: string; time: string; message: string }[] | null> {
+  const { data, error } = await supabase.from('automation_logs').select('*').order('time', { ascending: false }).limit(200);
+  if (error || !data) return null;
+  return data.map((row: any) => ({ id: row.id, time: row.time, message: row.message }));
+}
+
+export async function insertAutomationLog(log: { id: string; time: string; message: string }): Promise<void> {
+  await supabase.from('automation_logs').insert({ id: log.id, time: log.time, message: log.message });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 7. ATTACHMENTS & DOCUMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { Attachment, EmailInRoute } from '../context/AttachmentsContext';
+
+function dbToAttachment(row: any, notes: any[]): Attachment {
+  return {
+    id:         row.id,
+    fileName:   row.file_name,
+    mimeType:   row.mime_type,
+    size:       row.size,
+    dataUrl:    row.data_url ?? undefined,
+    ocrText:    row.ocr_text ?? undefined,
+    uploadedAt: row.uploaded_at,
+    uploadedBy: row.uploaded_by,
+    source:     row.source,
+    module:     row.module,
+    documentId: row.document_id,
+    notes:      notes.map((n: any) => ({ id: n.id, text: n.text, createdAt: n.created_at, createdBy: n.created_by })),
+    tags:       row.tags ?? [],
+    version:    row.version ?? 1,
+  };
+}
+
+function attachmentToDb(a: Attachment) {
+  return {
+    id:          a.id,
+    file_name:   a.fileName,
+    mime_type:   a.mimeType,
+    size:        a.size,
+    data_url:    a.dataUrl ?? null,
+    ocr_text:    a.ocrText ?? null,
+    uploaded_at: a.uploadedAt,
+    uploaded_by: a.uploadedBy,
+    source:      a.source,
+    module:      a.module,
+    document_id: a.documentId,
+    tags:        a.tags,
+    version:     a.version,
+  };
+}
+
+export async function fetchAttachments(): Promise<Attachment[] | null> {
+  const [{ data: atts, error: e1 }, { data: notes, error: e2 }] = await Promise.all([
+    supabase.from('attachments').select('*').order('uploaded_at', { ascending: false }),
+    supabase.from('attachment_notes').select('*'),
+  ]);
+  if (e1 || e2 || !atts || !notes) return null;
+  return atts.map(row => dbToAttachment(row, notes.filter((n: any) => n.attachment_id === row.id)));
+}
+
+export async function upsertAttachment(a: Attachment): Promise<void> {
+  await supabase.from('attachments').upsert(attachmentToDb(a), { onConflict: 'id' });
+  await supabase.from('attachment_notes').delete().eq('attachment_id', a.id);
+  if (a.notes.length > 0) {
+    await supabase.from('attachment_notes').insert(a.notes.map(n => ({ id: n.id, attachment_id: a.id, text: n.text, created_at: n.createdAt, created_by: n.createdBy })));
+  }
+}
+
+export async function upsertAttachments(attachments: Attachment[]): Promise<void> {
+  if (attachments.length === 0) return;
+  await supabase.from('attachments').upsert(attachments.map(attachmentToDb), { onConflict: 'id' });
+}
+
+export async function deleteAttachmentDb(id: string): Promise<void> {
+  await supabase.from('attachments').delete().eq('id', id);
+}
+
+function dbToEmailRoute(row: any): EmailInRoute {
+  return { id: row.id, address: row.address, name: row.name, routeTo: row.route_to, autoLink: row.auto_link, enabled: row.enabled };
+}
+
+function emailRouteToDb(r: EmailInRoute) {
+  return { id: r.id, address: r.address, name: r.name, route_to: r.routeTo, auto_link: r.autoLink, enabled: r.enabled };
+}
+
+export async function fetchEmailRoutes(): Promise<EmailInRoute[] | null> {
+  const { data, error } = await supabase.from('email_routes').select('*');
+  if (error || !data) return null;
+  return data.map(dbToEmailRoute);
+}
+
+export async function upsertEmailRoutes(routes: EmailInRoute[]): Promise<void> {
+  if (routes.length === 0) return;
+  await supabase.from('email_routes').upsert(routes.map(emailRouteToDb), { onConflict: 'id' });
+}
+
+export async function upsertEmailRoute(route: EmailInRoute): Promise<void> {
+  await supabase.from('email_routes').upsert(emailRouteToDb(route), { onConflict: 'id' });
+}
+
+export async function deleteEmailRouteDb(id: string): Promise<void> {
+  await supabase.from('email_routes').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 8. ROLE PRESETS
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { RolePreset } from '../context/PresetsContext';
+
+export async function fetchRolePresets(): Promise<RolePreset[] | null> {
+  const { data, error } = await supabase.from('role_presets').select('*');
+  if (error || !data) return null;
+  return data.map((row: any) => ({ id: row.id, name: row.name, emoji: row.emoji, description: row.description, color: row.color, permissions: row.permissions ?? {}, isSystem: row.is_system }));
+}
+
+export async function upsertRolePresets(presets: RolePreset[]): Promise<void> {
+  if (presets.length === 0) return;
+  await supabase.from('role_presets').upsert(presets.map(p => ({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem })), { onConflict: 'id' });
+}
+
+export async function upsertRolePreset(p: RolePreset): Promise<void> {
+  await supabase.from('role_presets').upsert({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem }, { onConflict: 'id' });
+}
+
+export async function deleteRolePresetDb(id: string): Promise<void> {
+  await supabase.from('role_presets').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9. FORM BUILDER
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type { FormConfiguration } from '../types/formBuilder';
+
+export async function fetchFormConfigurations(): Promise<FormConfiguration[] | null> {
+  const { data, error } = await supabase.from('form_configurations').select('*');
+  if (error || !data) return null;
+  return data.map((row: any) => ({ formId: row.form_id, formName: row.form_name, formDescription: row.form_description ?? undefined, module: row.module, fields: row.fields ?? [] }));
+}
+
+export async function upsertFormConfiguration(config: FormConfiguration): Promise<void> {
+  await supabase.from('form_configurations').upsert({ form_id: config.formId, form_name: config.formName, form_description: config.formDescription ?? null, module: config.module, fields: config.fields }, { onConflict: 'form_id' });
+}
+
+export async function upsertFormConfigurations(configs: FormConfiguration[]): Promise<void> {
+  if (configs.length === 0) return;
+  await supabase.from('form_configurations').upsert(configs.map(c => ({ form_id: c.formId, form_name: c.formName, form_description: c.formDescription ?? null, module: c.module, fields: c.fields })), { onConflict: 'form_id' });
+}
+
+export async function deleteFormConfigurationDb(formId: string): Promise<void> {
+  await supabase.from('form_configurations').delete().eq('form_id', formId);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 10. ADDITIONAL ENTITIES (Agents, Suppliers, Invoices, etc.)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import type {
+  Agent, Supplier, Expense, Invoice, Vehicle, TourPackage, VATRecord,
+  Lead, Employee, BankAccount, Payment,
+} from '../data/mockData';
+
+// ─── Agents ───────────────────────────────────────────────────────────────────
+
+function dbToAgent(row: any): Agent {
+  return {
+    id:            row.id,
+    name:          row.name,
+    country:       row.country,
+    creditLimit:   Number(row.credit_limit),
+    outstanding:   Number(row.outstanding),
+    paymentTerms:  row.payment_terms,
+    commission:    Number(row.commission),
+    totalBookings: row.total_bookings,
+    status:        row.status,
+    email:         row.email,
+    phone:         row.phone,
+  };
+}
+
+function agentToDb(a: Agent) {
+  return {
+    id:             a.id,
+    name:           a.name,
+    country:        a.country,
+    credit_limit:   a.creditLimit,
+    outstanding:    a.outstanding,
+    payment_terms:  a.paymentTerms,
+    commission:     a.commission,
+    total_bookings: a.totalBookings,
+    status:         a.status,
+    email:          a.email,
+    phone:          a.phone,
+  };
+}
+
+export async function fetchAgents(): Promise<Agent[] | null> {
+  const { data, error } = await supabase.from('agents').select('*');
+  if (error || !data) return null;
+  return data.map(dbToAgent);
+}
+
+export async function upsertAgent(agent: Agent): Promise<void> {
+  await supabase.from('agents').upsert(agentToDb(agent), { onConflict: 'id' });
+}
+
+export async function upsertAgents(agents: Agent[]): Promise<void> {
+  if (agents.length === 0) return;
+  await supabase.from('agents').upsert(agents.map(agentToDb), { onConflict: 'id' });
+}
+
+export async function deleteAgentDb(id: string): Promise<void> {
+  await supabase.from('agents').delete().eq('id', id);
+}
+
+// ─── Suppliers ────────────────────────────────────────────────────────────────
+
+function dbToSupplier(row: any): Supplier {
+  return {
+    id:           row.id,
+    name:         row.name,
+    type:         row.type,
+    contact:      row.contact,
+    email:        row.email,
+    totalPayable: Number(row.total_payable),
+    paidAmount:   Number(row.paid_amount),
+    status:       row.status,
+  };
+}
+
+function supplierToDb(s: Supplier) {
+  return {
+    id:            s.id,
+    name:          s.name,
+    type:          s.type,
+    contact:       s.contact,
+    email:         s.email,
+    total_payable: s.totalPayable,
+    paid_amount:   s.paidAmount,
+    status:        s.status,
+  };
+}
+
+export async function fetchSuppliers(): Promise<Supplier[] | null> {
+  const { data, error } = await supabase.from('suppliers').select('*');
+  if (error || !data) return null;
+  return data.map(dbToSupplier);
+}
+
+export async function upsertSupplier(supplier: Supplier): Promise<void> {
+  await supabase.from('suppliers').upsert(supplierToDb(supplier), { onConflict: 'id' });
+}
+
+export async function upsertSuppliers(suppliers: Supplier[]): Promise<void> {
+  if (suppliers.length === 0) return;
+  await supabase.from('suppliers').upsert(suppliers.map(supplierToDb), { onConflict: 'id' });
+}
+
+export async function deleteSupplierDb(id: string): Promise<void> {
+  await supabase.from('suppliers').delete().eq('id', id);
+}
+
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+
+function dbToExpense(row: any): Expense {
+  return {
+    id:          row.id,
+    category:    row.category,
+    supplier:    row.supplier,
+    amount:      Number(row.amount),
+    paymentMode: row.payment_mode,
+    date:        row.date,
+    description: row.description,
+    status:      row.status,
+  };
+}
+
+function expenseToDb(e: Expense) {
+  return {
+    id:           e.id,
+    category:     e.category,
+    supplier:     e.supplier,
+    amount:       e.amount,
+    payment_mode: e.paymentMode,
+    date:         e.date,
+    description:  e.description,
+    status:       e.status,
+  };
+}
+
+export async function fetchExpenses(): Promise<Expense[] | null> {
+  const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToExpense);
+}
+
+export async function upsertExpense(expense: Expense): Promise<void> {
+  await supabase.from('expenses').upsert(expenseToDb(expense), { onConflict: 'id' });
+}
+
+export async function upsertExpenses(expenses: Expense[]): Promise<void> {
+  if (expenses.length === 0) return;
+  await supabase.from('expenses').upsert(expenses.map(expenseToDb), { onConflict: 'id' });
+}
+
+export async function deleteExpenseDb(id: string): Promise<void> {
+  await supabase.from('expenses').delete().eq('id', id);
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+function dbToInvoice(row: any): Invoice {
+  return {
+    id:       row.id,
+    type:     row.type,
+    party:    row.party,
+    amount:   Number(row.amount),
+    vat:      Number(row.vat),
+    total:    Number(row.total),
+    currency: row.currency,
+    date:     row.date,
+    dueDate:  row.due_date,
+    status:   row.status,
+  };
+}
+
+function invoiceToDb(inv: Invoice) {
+  return {
+    id:       inv.id,
+    type:     inv.type,
+    party:    inv.party,
+    amount:   inv.amount,
+    vat:      inv.vat,
+    total:    inv.total,
+    currency: inv.currency,
+    date:     inv.date,
+    due_date: inv.dueDate,
+    status:   inv.status,
+  };
+}
+
+export async function fetchInvoices(): Promise<Invoice[] | null> {
+  const { data, error } = await supabase.from('invoices').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToInvoice);
+}
+
+export async function upsertInvoice(invoice: Invoice): Promise<void> {
+  await supabase.from('invoices').upsert(invoiceToDb(invoice), { onConflict: 'id' });
+}
+
+export async function upsertInvoices(invoices: Invoice[]): Promise<void> {
+  if (invoices.length === 0) return;
+  await supabase.from('invoices').upsert(invoices.map(invoiceToDb), { onConflict: 'id' });
+}
+
+export async function deleteInvoiceDb(id: string): Promise<void> {
+  await supabase.from('invoices').delete().eq('id', id);
+}
+
+// ─── Vehicles ─────────────────────────────────────────────────────────────────
+
+function dbToVehicle(row: any): Vehicle {
+  return {
+    id:       row.id,
+    plate:    row.plate,
+    type:     row.type,
+    driver:   row.driver,
+    status:   row.status,
+    fuelCost: Number(row.fuel_cost),
+    trips:    row.trips,
+    revenue:  Number(row.revenue),
+  };
+}
+
+function vehicleToDb(v: Vehicle) {
+  return {
+    id:        v.id,
+    plate:     v.plate,
+    type:      v.type,
+    driver:    v.driver,
+    status:    v.status,
+    fuel_cost: v.fuelCost,
+    trips:     v.trips,
+    revenue:   v.revenue,
+  };
+}
+
+export async function fetchVehicles(): Promise<Vehicle[] | null> {
+  const { data, error } = await supabase.from('vehicles').select('*');
+  if (error || !data) return null;
+  return data.map(dbToVehicle);
+}
+
+export async function upsertVehicle(vehicle: Vehicle): Promise<void> {
+  await supabase.from('vehicles').upsert(vehicleToDb(vehicle), { onConflict: 'id' });
+}
+
+export async function upsertVehicles(vehicles: Vehicle[]): Promise<void> {
+  if (vehicles.length === 0) return;
+  await supabase.from('vehicles').upsert(vehicles.map(vehicleToDb), { onConflict: 'id' });
+}
+
+export async function deleteVehicleDb(id: string): Promise<void> {
+  await supabase.from('vehicles').delete().eq('id', id);
+}
+
+// ─── Tour Packages ────────────────────────────────────────────────────────────
+
+function dbToTourPackage(row: any): TourPackage {
+  return {
+    id:           row.id,
+    name:         row.name,
+    price:        Number(row.price),
+    hotelCost:    Number(row.hotel_cost),
+    transferCost: Number(row.transfer_cost),
+    ticketsCost:  Number(row.tickets_cost),
+    guideCost:    Number(row.guide_cost),
+    otherCost:    Number(row.other_cost),
+    profit:       Number(row.profit),
+    bookings:     row.bookings,
+  };
+}
+
+function tourPackageToDb(tp: TourPackage) {
+  return {
+    id:            tp.id,
+    name:          tp.name,
+    price:         tp.price,
+    hotel_cost:    tp.hotelCost,
+    transfer_cost: tp.transferCost,
+    tickets_cost:  tp.ticketsCost,
+    guide_cost:    tp.guideCost,
+    other_cost:    tp.otherCost,
+    profit:        tp.profit,
+    bookings:      tp.bookings,
+  };
+}
+
+export async function fetchTourPackages(): Promise<TourPackage[] | null> {
+  const { data, error } = await supabase.from('tour_packages').select('*');
+  if (error || !data) return null;
+  return data.map(dbToTourPackage);
+}
+
+export async function upsertTourPackage(tp: TourPackage): Promise<void> {
+  await supabase.from('tour_packages').upsert(tourPackageToDb(tp), { onConflict: 'id' });
+}
+
+export async function upsertTourPackages(packages: TourPackage[]): Promise<void> {
+  if (packages.length === 0) return;
+  await supabase.from('tour_packages').upsert(packages.map(tourPackageToDb), { onConflict: 'id' });
+}
+
+export async function deleteTourPackageDb(id: string): Promise<void> {
+  await supabase.from('tour_packages').delete().eq('id', id);
+}
+
+// ─── VAT Records ──────────────────────────────────────────────────────────────
+
+function dbToVATRecord(row: any): VATRecord & { id?: string } {
+  return {
+    id:        row.id,
+    month:     row.month,
+    outputVAT: Number(row.output_vat),
+    inputVAT:  Number(row.input_vat),
+    netVAT:    Number(row.net_vat),
+    status:    row.status,
+  };
+}
+
+function vatRecordToDb(v: VATRecord & { id?: string }) {
+  return {
+    id:         v.id ?? `vat-${v.month}`,
+    month:      v.month,
+    output_vat: v.outputVAT,
+    input_vat:  v.inputVAT,
+    net_vat:    v.netVAT,
+    status:     v.status,
+  };
+}
+
+export async function fetchVATRecords(): Promise<(VATRecord & { id?: string })[] | null> {
+  const { data, error } = await supabase.from('vat_records').select('*');
+  if (error || !data) return null;
+  return data.map(dbToVATRecord);
+}
+
+export async function upsertVATRecord(record: VATRecord & { id?: string }): Promise<void> {
+  await supabase.from('vat_records').upsert(vatRecordToDb(record), { onConflict: 'id' });
+}
+
+export async function upsertVATRecords(records: (VATRecord & { id?: string })[]): Promise<void> {
+  if (records.length === 0) return;
+  await supabase.from('vat_records').upsert(records.map(vatRecordToDb), { onConflict: 'id' });
+}
+
+export async function deleteVATRecordDb(id: string): Promise<void> {
+  await supabase.from('vat_records').delete().eq('id', id);
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+function dbToLead(row: any): Lead {
+  return {
+    id:       row.id,
+    name:     row.name,
+    email:    row.email,
+    phone:    row.phone,
+    source:   row.source,
+    service:  row.service,
+    status:   row.status,
+    value:    Number(row.value),
+    date:     row.date,
+    followUp: row.follow_up,
+  };
+}
+
+function leadToDb(l: Lead) {
+  return {
+    id:        l.id,
+    name:      l.name,
+    email:     l.email,
+    phone:     l.phone,
+    source:    l.source,
+    service:   l.service,
+    status:    l.status,
+    value:     l.value,
+    date:      l.date,
+    follow_up: l.followUp,
+  };
+}
+
+export async function fetchLeads(): Promise<Lead[] | null> {
+  const { data, error } = await supabase.from('leads').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToLead);
+}
+
+export async function upsertLead(lead: Lead): Promise<void> {
+  await supabase.from('leads').upsert(leadToDb(lead), { onConflict: 'id' });
+}
+
+export async function upsertLeads(leads: Lead[]): Promise<void> {
+  if (leads.length === 0) return;
+  await supabase.from('leads').upsert(leads.map(leadToDb), { onConflict: 'id' });
+}
+
+export async function deleteLeadDb(id: string): Promise<void> {
+  await supabase.from('leads').delete().eq('id', id);
+}
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+
+function dbToEmployee(row: any): Employee {
+  return {
+    id:         row.id,
+    name:       row.name,
+    department: row.department,
+    role:       row.role,
+    salary:     Number(row.salary),
+    attendance: Number(row.attendance),
+    joinDate:   row.join_date,
+    status:     row.status,
+  };
+}
+
+function employeeToDb(e: Employee) {
+  return {
+    id:         e.id,
+    name:       e.name,
+    department: e.department,
+    role:       e.role,
+    salary:     e.salary,
+    attendance: e.attendance,
+    join_date:  e.joinDate,
+    status:     e.status,
+  };
+}
+
+export async function fetchEmployees(): Promise<Employee[] | null> {
+  const { data, error } = await supabase.from('employees').select('*');
+  if (error || !data) return null;
+  return data.map(dbToEmployee);
+}
+
+export async function upsertEmployee(employee: Employee): Promise<void> {
+  await supabase.from('employees').upsert(employeeToDb(employee), { onConflict: 'id' });
+}
+
+export async function upsertEmployees(employees: Employee[]): Promise<void> {
+  if (employees.length === 0) return;
+  await supabase.from('employees').upsert(employees.map(employeeToDb), { onConflict: 'id' });
+}
+
+export async function deleteEmployeeDb(id: string): Promise<void> {
+  await supabase.from('employees').delete().eq('id', id);
+}
+
+// ─── Bank / Cash Accounts ─────────────────────────────────────────────────────
+
+function dbToBankAccount(row: any): BankAccount {
+  return {
+    id:       row.id,
+    name:     row.name,
+    type:     row.type,
+    balance:  Number(row.balance),
+    currency: row.currency,
+    bank:     row.bank,
+  };
+}
+
+function bankAccountToDb(b: BankAccount) {
+  return {
+    id:       b.id,
+    name:     b.name,
+    type:     b.type,
+    balance:  b.balance,
+    currency: b.currency,
+    bank:     b.bank,
+  };
+}
+
+export async function fetchBankCashAccounts(): Promise<BankAccount[] | null> {
+  const { data, error } = await supabase.from('bank_cash_accounts').select('*');
+  if (error || !data) return null;
+  return data.map(dbToBankAccount);
+}
+
+export async function upsertBankCashAccount(account: BankAccount): Promise<void> {
+  await supabase.from('bank_cash_accounts').upsert(bankAccountToDb(account), { onConflict: 'id' });
+}
+
+export async function upsertBankCashAccounts(accounts: BankAccount[]): Promise<void> {
+  if (accounts.length === 0) return;
+  await supabase.from('bank_cash_accounts').upsert(accounts.map(bankAccountToDb), { onConflict: 'id' });
+}
+
+export async function deleteBankCashAccountDb(id: string): Promise<void> {
+  await supabase.from('bank_cash_accounts').delete().eq('id', id);
+}
+
+// ─── Payments Register ────────────────────────────────────────────────────────
+
+function dbToPayment(row: any): Payment {
+  return {
+    id:        row.id,
+    type:      row.type,
+    party:     row.party,
+    amount:    Number(row.amount),
+    method:    row.method,
+    date:      row.date,
+    reference: row.reference,
+    status:    row.status,
+  };
+}
+
+function paymentToDb(p: Payment) {
+  return {
+    id:        p.id,
+    type:      p.type,
+    party:     p.party,
+    amount:    p.amount,
+    method:    p.method,
+    date:      p.date,
+    reference: p.reference,
+    status:    p.status,
+  };
+}
+
+export async function fetchPayments(): Promise<Payment[] | null> {
+  const { data, error } = await supabase.from('payments_register').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToPayment);
+}
+
+export async function upsertPayment(payment: Payment): Promise<void> {
+  await supabase.from('payments_register').upsert(paymentToDb(payment), { onConflict: 'id' });
+}
+
+export async function upsertPayments(payments: Payment[]): Promise<void> {
+  if (payments.length === 0) return;
+  await supabase.from('payments_register').upsert(payments.map(paymentToDb), { onConflict: 'id' });
+}
+
+export async function deletePaymentDb(id: string): Promise<void> {
+  await supabase.from('payments_register').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 11. PROJECTS & TIME TRACKING
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type Project = {
+  id: string;
+  name: string;
+  client?: string;
+  code?: string;
+  status: 'Active' | 'Paused' | 'Completed';
+  hourlyRate: number;
+  budgetHours?: number;
+  createdAt: string;
+};
+
+export type TimeEntry = {
+  id: string;
+  projectId: string;
+  user: string;
+  date: string;
+  notes?: string;
+  durationMin: number;
+};
+
+function dbToProject(row: any): Project {
+  return {
+    id:          row.id,
+    name:        row.name,
+    client:      row.client ?? undefined,
+    code:        row.code ?? undefined,
+    status:      row.status,
+    hourlyRate:  Number(row.hourly_rate),
+    budgetHours: row.budget_hours != null ? Number(row.budget_hours) : undefined,
+    createdAt:   row.created_at,
+  };
+}
+
+function projectToDb(p: Project) {
+  return {
+    id:           p.id,
+    name:         p.name,
+    client:       p.client ?? null,
+    code:         p.code ?? null,
+    status:       p.status,
+    hourly_rate:  p.hourlyRate,
+    budget_hours: p.budgetHours ?? null,
+    created_at:   p.createdAt,
+  };
+}
+
+export async function fetchProjects(): Promise<Project[] | null> {
+  const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToProject);
+}
+
+export async function upsertProject(project: Project): Promise<void> {
+  await supabase.from('projects').upsert(projectToDb(project), { onConflict: 'id' });
+}
+
+export async function upsertProjects(projects: Project[]): Promise<void> {
+  if (projects.length === 0) return;
+  await supabase.from('projects').upsert(projects.map(projectToDb), { onConflict: 'id' });
+}
+
+export async function deleteProjectDb(id: string): Promise<void> {
+  await supabase.from('projects').delete().eq('id', id);
+}
+
+// ─── Time Entries ─────────────────────────────────────────────────────────────
+
+function dbToTimeEntry(row: any): TimeEntry {
+  return {
+    id:          row.id,
+    projectId:   row.project_id,
+    user:        row.user_name,
+    date:        row.date,
+    notes:       row.notes ?? undefined,
+    durationMin: row.duration_min,
+  };
+}
+
+function timeEntryToDb(t: TimeEntry) {
+  return {
+    id:           t.id,
+    project_id:   t.projectId,
+    user_name:    t.user,
+    date:         t.date,
+    notes:        t.notes ?? null,
+    duration_min: t.durationMin,
+  };
+}
+
+export async function fetchTimeEntries(): Promise<TimeEntry[] | null> {
+  const { data, error } = await supabase.from('time_entries').select('*').order('date', { ascending: false });
+  if (error || !data) return null;
+  return data.map(dbToTimeEntry);
+}
+
+export async function upsertTimeEntry(entry: TimeEntry): Promise<void> {
+  await supabase.from('time_entries').upsert(timeEntryToDb(entry), { onConflict: 'id' });
+}
+
+export async function upsertTimeEntries(entries: TimeEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  await supabase.from('time_entries').upsert(entries.map(timeEntryToDb), { onConflict: 'id' });
+}
+
+export async function deleteTimeEntryDb(id: string): Promise<void> {
+  await supabase.from('time_entries').delete().eq('id', id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 12. RETAINERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type Retainer = {
+  id: string;
+  customer: string;
+  description?: string;
+  amount: number;
+  currency: string;
+  interval: 'Monthly' | 'Quarterly' | 'Yearly';
+  startDate: string;
+  endDate?: string;
+  status: 'Active' | 'Paused' | 'Cancelled';
+  nextInvoiceOn: string;
+};
+
+function dbToRetainer(row: any): Retainer {
+  return {
+    id:            row.id,
+    customer:      row.customer,
+    description:   row.description ?? undefined,
+    amount:        Number(row.amount),
+    currency:      row.currency,
+    interval:      row.interval,
+    startDate:     row.start_date,
+    endDate:       row.end_date ?? undefined,
+    status:        row.status,
+    nextInvoiceOn: row.next_invoice_on,
+  };
+}
+
+function retainerToDb(r: Retainer) {
+  return {
+    id:              r.id,
+    customer:        r.customer,
+    description:     r.description ?? null,
+    amount:          r.amount,
+    currency:        r.currency,
+    interval:        r.interval,
+    start_date:      r.startDate,
+    end_date:        r.endDate ?? null,
+    status:          r.status,
+    next_invoice_on: r.nextInvoiceOn,
+  };
+}
+
+export async function fetchRetainers(): Promise<Retainer[] | null> {
+  const { data, error } = await supabase.from('retainers').select('*');
+  if (error || !data) return null;
+  return data.map(dbToRetainer);
+}
+
+export async function upsertRetainer(retainer: Retainer): Promise<void> {
+  await supabase.from('retainers').upsert(retainerToDb(retainer), { onConflict: 'id' });
+}
+
+export async function upsertRetainers(retainers: Retainer[]): Promise<void> {
+  if (retainers.length === 0) return;
+  await supabase.from('retainers').upsert(retainers.map(retainerToDb), { onConflict: 'id' });
+}
+
+export async function deleteRetainerDb(id: string): Promise<void> {
+  await supabase.from('retainers').delete().eq('id', id);
 }

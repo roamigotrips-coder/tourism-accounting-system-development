@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus, Search, Download, X, Save, Printer, Eye, CheckCircle,
   Clock, AlertCircle, ChevronDown, ChevronUp, FileText,
@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { routeApproval, getCFOThreshold, getWorkflowSteps } from '../utils/approvalThresholds';
 import type { ApprovalItem } from '../context/ApprovalContext';
-import { invoices as initialInvoices } from '../data/mockData';
+import { fetchInvoices, upsertInvoice } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
 import { useApproval } from '../context/ApprovalContext';
@@ -460,7 +461,9 @@ export default function Invoices() {
   const [paymentConfig, setPaymentConfig] = useState<RecordPaymentConfig | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentRecord[]>>({});
   const [form, setForm] = useState<InvoiceForm>(emptyForm);
-  const [invoiceList, setInvoiceList] = useState<InvoiceData[]>(initialInvoices as InvoiceData[]);
+  const [invoiceList, setInvoiceList] = useState<InvoiceData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [estFilter, setEstFilter] = useState<'All' | 'Pending Approval' | 'Approved' | 'Rejected' | 'Invoiced'>('Pending Approval');
   const [approvedEstimate, setApprovedEstimate] = useState<BookingEstimate | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -468,6 +471,21 @@ export default function Invoices() {
   const [expandedApproval, setExpandedApproval] = useState<string | null>(null);
   const cfoThreshold = getCFOThreshold();
   const { getByDocument } = useAttachments();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchInvoices();
+        if (!cancelled && data) setInvoiceList(data as InvoiceData[]);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -508,6 +526,7 @@ export default function Invoices() {
       notes: form.notes, items: form.items,
     };
     setInvoiceList(prev => [newInvoice, ...prev]);
+    upsertInvoice(newInvoice as any).catch(() => {});
     routeApproval(newInvoice.total, 'Invoice');
     ensureApprovalRequest({
       refNumber: newInvoice.id,
@@ -617,6 +636,7 @@ export default function Invoices() {
       fromEstimate: approved.bookingRef,
     };
     setInvoiceList(prev => [newInvoice, ...prev]);
+    upsertInvoice(newInvoice as any).catch(() => {});
     ensureApprovalRequest({
       refNumber: newInvoice.id,
       type: 'Invoice',
@@ -678,6 +698,8 @@ export default function Invoices() {
   // ─── Estimate filter ────────────────────────────────────────────────────────
   const filteredEstimates = estimates.filter(e => estFilter === 'All' || e.status === estFilter);
 
+  if (loading) return <LoadingSpinner message="Loading invoices..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6 relative">

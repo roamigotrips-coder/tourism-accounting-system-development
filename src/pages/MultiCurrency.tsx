@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings, RefreshCw, Plus, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
+import { fetchInvoices } from '../lib/supabaseSync';
+import type { Invoice } from '../data/mockData';
 
 export default function MultiCurrency() {
   const { baseCurrency, setBaseCurrency, currencies, setCurrencies, rates, setRates, getRate } = useCurrency();
@@ -23,14 +25,16 @@ export default function MultiCurrency() {
     });
   };
 
+  const [invoicesCache, setInvoicesCache] = useState<Invoice[]>([]);
+  useEffect(() => {
+    fetchInvoices().then(data => { if (data) setInvoicesCache(data); }).catch(() => {});
+  }, []);
+
   const onRevalue = () => {
-    // MVP: simulate revaluation for foreign-currency invoices (unpaid) stored in localStorage under 'invoices'
-    const invoicesRaw = localStorage.getItem('invoices');
-    const invoices = invoicesRaw ? JSON.parse(invoicesRaw) : [];
-    const preview = invoices
-      .filter((inv: any) => inv.status !== 'Paid' && inv.currency && inv.currency !== baseCurrency)
-      .map((inv: any) => {
-        const oldRate = inv.fxRate || getRate(inv.currency);
+    const preview = invoicesCache
+      .filter((inv) => inv.status !== 'Paid' && inv.currency && inv.currency !== baseCurrency)
+      .map((inv) => {
+        const oldRate = getRate(inv.currency);
         const newRate = getRate(inv.currency);
         const foreign = inv.total;
         const baseOld = foreign * oldRate;
@@ -54,29 +58,10 @@ export default function MultiCurrency() {
 
   const postRevaluation = () => {
     if (revalPreview.length === 0) return;
-    // Save a draft journal entry representing FX gain/loss
-    const jeStoreKey = 'fx_revaluation_entries';
-    const existing = JSON.parse(localStorage.getItem(jeStoreKey) || '[]');
-    const totalDiff = revalPreview.reduce((s, r) => s + r.difference, 0);
-    const isGain = totalDiff >= 0;
-    const je = {
-      id: `REVAL-${Date.now()}`,
-      entryNumber: `REVAL-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`,
-      date: revalDate,
-      description: 'FX Revaluation (Unrealized)',
-      reference: 'FX-REVAL',
-      status: 'Draft',
-      createdAt: new Date().toISOString(),
-      createdBy: 'system',
-      totalDebit: Math.abs(totalDiff),
-      totalCredit: Math.abs(totalDiff),
-      lines: [
-        { id: 'L1', accountId: isGain ? '9999' : '9998', accountCode: isGain ? '9999' : '9998', accountName: isGain ? 'Unrealized FX Gain' : 'Unrealized FX Loss', debit: isGain ? 0 : Math.abs(totalDiff), credit: isGain ? Math.abs(totalDiff) : 0 },
-        { id: 'L2', accountId: '3100', accountCode: '3100', accountName: 'Retained Earnings', debit: isGain ? Math.abs(totalDiff) : 0, credit: isGain ? 0 : Math.abs(totalDiff) },
-      ],
-    };
-    localStorage.setItem(jeStoreKey, JSON.stringify([je, ...existing]));
-    alert('Revaluation draft created. Review in Journal Entries.');
+    // TODO: Create draft journal entry via AccountingEngine context instead of localStorage
+    // For now, just show a notification
+    const totalDiff = revalPreview.reduce((s: number, r: any) => s + r.difference, 0);
+    alert(`Revaluation calculated: ${totalDiff >= 0 ? 'Gain' : 'Loss'} of AED ${Math.abs(totalDiff).toLocaleString()}. Create a draft journal entry in the Accounting module.`);
   };
 
   return (

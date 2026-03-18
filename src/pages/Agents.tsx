@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Plus, Eye, FileText, X, Save, DollarSign } from 'lucide-react';
-import { agents } from '../data/mockData';
+import type { Agent } from '../data/mockData';
+import { fetchAgents, upsertAgent } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 
@@ -29,9 +31,26 @@ export default function Agents() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<AgentForm>(emptyForm);
-  const [agentList, setAgentList] = useState(agents);
+  const [agentList, setAgentList] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [paymentConfig, setPaymentConfig] = useState<RecordPaymentConfig | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentRecord[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchAgents();
+        if (!cancelled && data) setAgentList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = agentList.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -64,11 +83,16 @@ export default function Agents() {
     if (!paymentConfig) return;
     const agentId = paymentConfig.invoiceId.replace('AGENT-', '');
     setPaymentHistory(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), payment] }));
-    setAgentList(prev => prev.map(a =>
-      a.id === agentId
-        ? { ...a, outstanding: newStatus === 'Paid' ? 0 : Math.max(0, a.outstanding - payment.amount) }
-        : a
-    ));
+    setAgentList(prev => {
+      const updated = prev.map(a =>
+        a.id === agentId
+          ? { ...a, outstanding: newStatus === 'Paid' ? 0 : Math.max(0, a.outstanding - payment.amount) }
+          : a
+      );
+      const changedAgent = updated.find(a => a.id === agentId);
+      if (changedAgent) upsertAgent(changedAgent).catch(() => {});
+      return updated;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -87,9 +111,13 @@ export default function Agents() {
       totalBookings: 0,
     };
     setAgentList(prev => [newAgent, ...prev]);
+    upsertAgent(newAgent).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading agents..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

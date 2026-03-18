@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileText, AlertTriangle, CheckCircle, Plus, X, Save } from 'lucide-react';
-import { vatRecords } from '../data/mockData';
+import { fetchVATRecords, upsertVATRecord } from '../lib/supabaseSync';
+import type { VATRecord } from '../data/mockData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 interface VATForm {
   period: string;
@@ -16,7 +18,24 @@ export default function VATTax() {
   const [showModal, setShowModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [form, setForm] = useState<VATForm>(emptyForm);
-  const [vatList, setVatList] = useState(vatRecords);
+  const [vatList, setVatList] = useState<VATRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchVATRecords();
+        if (!cancelled && data) setVatList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [trnInput, setTrnInput] = useState('100-1234-5678-90');
   const [editingTrn, setEditingTrn] = useState(false);
 
@@ -40,9 +59,13 @@ export default function VATTax() {
       status: form.status as 'Filed' | 'Pending' | 'Due',
     };
     setVatList(prev => [newRecord, ...prev]);
+    upsertVATRecord(newRecord).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading VAT records..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

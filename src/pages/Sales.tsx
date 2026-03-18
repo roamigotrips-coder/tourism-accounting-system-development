@@ -1,11 +1,13 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, Search, X, Upload, FileSpreadsheet, FileText,
   CheckCircle, AlertCircle, Download, Eye, Trash2, ChevronDown,
   Package, Hotel, Car, Ticket, Compass, UserCheck, TrendingUp, TrendingDown, Info
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { bookings } from '../data/mockData';
+import type { Booking } from '../data/mockData';
+import { fetchEstimates } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
 import { useAuditTrail } from '../context/AuditTrailContext';
@@ -153,8 +155,10 @@ export default function Sales() {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'manual' | 'upload'>('manual');
   const [form, setForm] = useState<BookingForm>(emptyForm);
-  const [bookingList, setBookingList] = useState(bookings);
-  const [viewBooking, setViewBooking] = useState<(typeof bookings)[0] | null>(null);
+  const [bookingList, setBookingList] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewBooking, setViewBooking] = useState<Booking | null>(null);
   const [paymentConfig, setPaymentConfig] = useState<RecordPaymentConfig | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentRecord[]>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -167,6 +171,35 @@ export default function Sales() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'parsing' | 'preview' | 'success' | 'error'>('idle');
   const [uploadError, setUploadError] = useState('');
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchEstimates();
+        if (!cancelled && data) {
+          const mapped: Booking[] = data.map(est => ({
+            id: est.bookingRef,
+            agent: est.agent,
+            customer: est.customer,
+            serviceType: est.serviceType,
+            serviceDate: est.serviceDate,
+            sellingPrice: est.sellingPrice,
+            vat: est.vat,
+            currency: est.currency,
+            paymentStatus: (est.paymentStatus as 'Paid' | 'Pending' | 'Partial') || 'Pending',
+          }));
+          setBookingList(mapped);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const costingFileRef = useRef<HTMLInputElement>(null);
 
@@ -455,7 +488,7 @@ export default function Sales() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const openPaymentModal = (b: (typeof bookings)[0]) => {
+  const openPaymentModal = (b: Booking) => {
     const paidAmt = b.paymentStatus === 'Paid' ? b.sellingPrice + b.vat : b.paymentStatus === 'Partial' ? (b.sellingPrice + b.vat) * 0.5 : 0;
     setPaymentConfig({
       invoiceId: b.id,
@@ -496,6 +529,9 @@ export default function Sales() {
   const isTourPackage = form.serviceType === 'Tour Package';
   const costCalc = isTourPackage ? calcCosting(form) : null;
   const costValidation = submitAttempted ? isCostingValid(form) : { valid: true, errors: [] };
+
+  if (loading) return <LoadingSpinner message="Loading bookings..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

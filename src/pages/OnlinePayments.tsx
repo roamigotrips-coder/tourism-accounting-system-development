@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CreditCard, Link2, CheckCircle, Clock, Send, Plus, X, Save, Copy } from 'lucide-react';
-import { payments, invoices } from '../data/mockData';
+import { fetchPayments, fetchInvoices } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import type { Payment, Invoice } from '../data/mockData';
 
 const initialLinks: { id: string; invoice: string; party: string; amount: number; link: string; status: string; created: string }[] = [];
 
@@ -18,6 +20,28 @@ export default function OnlinePayments() {
   const [form, setForm] = useState<LinkForm>(emptyLinkForm);
   const [links, setLinks] = useState(initialLinks);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [paymentsData, invoicesData] = await Promise.all([fetchPayments(), fetchInvoices()]);
+        if (!cancelled) {
+          if (paymentsData) setPayments(paymentsData);
+          if (invoicesData) setInvoices(invoicesData);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const totalReceived = payments.filter(p => p.type === 'Receipt' && p.status === 'Completed').reduce((s, p) => s + p.amount, 0);
   const processing = payments.filter(p => p.status === 'Processing').reduce((s, p) => s + p.amount, 0);
@@ -57,6 +81,9 @@ export default function OnlinePayments() {
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

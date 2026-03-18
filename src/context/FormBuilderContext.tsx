@@ -1,7 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import type { FormConfiguration, FormField } from '../types/formBuilder';
-
-const STORAGE_KEY = 'accountspro_form_builder_configs_v1';
+import {
+  fetchFormConfigurations as fetchFormConfigurationsDb,
+  upsertFormConfiguration as upsertFormConfigurationDb,
+  upsertFormConfigurations as upsertFormConfigurationsDb,
+  deleteFormConfigurationDb,
+} from '../lib/supabaseSync';
 
 function getDefaultConfigs(): FormConfiguration[] {
   return [
@@ -21,7 +25,6 @@ function getDefaultConfigs(): FormConfiguration[] {
         { id: 'f8', label: 'Currency', fieldKey: 'currency', fieldType: 'dropdown', isRequired: true, order: 8, isSystem: true, options: ['AED', 'USD', 'EUR', 'GBP'] },
         { id: 'f9', label: 'Payment Status', fieldKey: 'paymentStatus', fieldType: 'toggle', isRequired: true, order: 9, isSystem: true },
         { id: 'f10', label: 'Notes', fieldKey: 'notes', fieldType: 'textarea', isRequired: false, order: 10, isSystem: true, placeholder: 'Additional details...' },
-        // Example custom (non-system) fields default
         { id: 'c1', label: 'Booking Source', fieldKey: 'bookingSource', fieldType: 'select', isRequired: false, order: 11, options: ['Website', 'WhatsApp', 'Email', 'Walk-in', 'Agent'] },
         { id: 'c2', label: 'Passenger Count', fieldKey: 'paxCount', fieldType: 'number', isRequired: false, order: 12, placeholder: 'e.g. 4' },
       ],
@@ -43,22 +46,6 @@ function getDefaultConfigs(): FormConfiguration[] {
   ];
 }
 
-function loadFromStorage(): FormConfiguration[] | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function saveToStorage(configs: FormConfiguration[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-  } catch {}
-}
-
 interface FormBuilderContextType {
   configurations: FormConfiguration[];
   getConfig: (formId: string) => FormConfiguration | null;
@@ -69,56 +56,115 @@ interface FormBuilderContextType {
   updateField: (formId: string, field: FormField) => void;
   deleteField: (formId: string, fieldId: string) => void;
   reorderField: (formId: string, fieldId: string, dir: 'up' | 'down') => void;
+  loading: boolean;
+  error: string | null;
 }
 
 const FormBuilderContext = createContext<FormBuilderContextType | null>(null);
 
 export function FormBuilderProvider({ children }: { children: React.ReactNode }) {
-  const [configurations, setConfigurations] = useState<FormConfiguration[]>(() => loadFromStorage() || getDefaultConfigs());
+  const [configurations, setConfigurationsState] = useState<FormConfiguration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // ── Load from Supabase on mount ───────────────────────────────────────────
   useEffect(() => {
-    saveToStorage(configurations);
-  }, [configurations]);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await fetchFormConfigurationsDb();
+        if (cancelled) return;
+        if (data !== null && data.length > 0) {
+          setConfigurationsState(data);
+        } else {
+          const defaults = getDefaultConfigs();
+          setConfigurationsState(defaults);
+          upsertFormConfigurationsDb(defaults).catch(() => {});
+        }
+        setError(null);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e.message || 'Failed to load form configurations');
+          setConfigurationsState(getDefaultConfigs());
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const getConfig = useCallback((formId: string) => {
     return configurations.find((c) => c.formId === formId) || null;
   }, [configurations]);
 
+  const setConfigurations: React.Dispatch<React.SetStateAction<FormConfiguration[]>> = (action) => {
+    setConfigurationsState(prev => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      return next;
+    });
+  };
+
+  const syncConfig = (formId: string, configs: FormConfiguration[]) => {
+    const config = configs.find(c => c.formId === formId);
+    if (config) upsertFormConfigurationDb(config).catch(() => {});
+  };
+
   const upsertConfiguration = (config: FormConfiguration) => {
-    setConfigurations((prev) => {
+    setConfigurationsState((prev) => {
       const exists = prev.some((c) => c.formId === config.formId);
-      return exists ? prev.map((c) => (c.formId === config.formId ? config : c)) : [config, ...prev];
+      const next = exists ? prev.map((c) => (c.formId === config.formId ? config : c)) : [config, ...prev];
+      upsertFormConfigurationDb(config).catch(() => {});
+      return next;
     });
   };
 
   const deleteConfiguration = (formId: string) => {
-    setConfigurations((prev) => prev.filter((c) => c.formId !== formId));
+    setConfigurationsState((prev) => prev.filter((c) => c.formId !== formId));
+    deleteFormConfigurationDb(formId).catch(() => {});
   };
 
   const addField = (formId: string, field: FormField) => {
-    setConfigurations((prev) => prev.map((c) => c.formId === formId ? { ...c, fields: [...c.fields, field] } : c));
+    setConfigurationsState((prev) => {
+      const next = prev.map((c) => c.formId === formId ? { ...c, fields: [...c.fields, field] } : c);
+      syncConfig(formId, next);
+      return next;
+    });
   };
 
   const updateField = (formId: string, field: FormField) => {
-    setConfigurations((prev) => prev.map((c) => c.formId === formId ? { ...c, fields: c.fields.map((f) => f.id === field.id ? field : f) } : c));
+    setConfigurationsState((prev) => {
+      const next = prev.map((c) => c.formId === formId ? { ...c, fields: c.fields.map((f) => f.id === field.id ? field : f) } : c);
+      syncConfig(formId, next);
+      return next;
+    });
   };
 
   const deleteField = (formId: string, fieldId: string) => {
-    setConfigurations((prev) => prev.map((c) => c.formId === formId ? { ...c, fields: c.fields.filter((f) => f.id !== fieldId) } : c));
+    setConfigurationsState((prev) => {
+      const next = prev.map((c) => c.formId === formId ? { ...c, fields: c.fields.filter((f) => f.id !== fieldId) } : c);
+      syncConfig(formId, next);
+      return next;
+    });
   };
 
   const reorderField = (formId: string, fieldId: string, dir: 'up' | 'down') => {
-    setConfigurations((prev) => prev.map((c) => {
-      if (c.formId !== formId) return c;
-      const fields = [...c.fields];
-      const index = fields.findIndex((f) => f.id === fieldId);
-      if (dir === 'up' && index > 0) {
-        [fields[index], fields[index - 1]] = [fields[index - 1], fields[index]];
-      } else if (dir === 'down' && index < fields.length - 1) {
-        [fields[index], fields[index + 1]] = [fields[index + 1], fields[index]];
-      }
-      return { ...c, fields };
-    }));
+    setConfigurationsState((prev) => {
+      const next = prev.map((c) => {
+        if (c.formId !== formId) return c;
+        const fields = [...c.fields];
+        const index = fields.findIndex((f) => f.id === fieldId);
+        if (dir === 'up' && index > 0) {
+          [fields[index], fields[index - 1]] = [fields[index - 1], fields[index]];
+        } else if (dir === 'down' && index < fields.length - 1) {
+          [fields[index], fields[index + 1]] = [fields[index + 1], fields[index]];
+        }
+        return { ...c, fields };
+      });
+      syncConfig(formId, next);
+      return next;
+    });
   };
 
   const value = useMemo(() => ({
@@ -131,7 +177,9 @@ export function FormBuilderProvider({ children }: { children: React.ReactNode })
     updateField,
     deleteField,
     reorderField,
-  }), [configurations, getConfig]);
+    loading,
+    error,
+  }), [configurations, getConfig, loading, error]);
 
   return (
     <FormBuilderContext.Provider value={value}>

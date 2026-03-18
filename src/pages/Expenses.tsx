@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus, Search, X, Save, Eye, Paperclip,
   Clock, CheckCircle, AlertCircle, ShieldCheck,
   Lock, ArrowRight, FileText, RefreshCw, Info,
   ChevronDown, ChevronUp, Send, Ban,
 } from 'lucide-react';
-import { expenses } from '../data/mockData';
+import { fetchExpenses, upsertExpense } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import AttachmentPanel from '../components/AttachmentPanel';
 import { useAttachments } from '../context/AttachmentsContext';
@@ -438,12 +439,29 @@ export default function Expenses() {
   const [showModal, setShowModal] = useState(false);
   const [viewExp, setViewExp] = useState<ExpenseItem | null>(null);
   const [expandedApproval, setExpandedApproval] = useState<string | null>(null);
-  const [expenseList, setExpenseList] = useState<ExpenseItem[]>(expenses as ExpenseItem[]);
+  const [expenseList, setExpenseList] = useState<ExpenseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const { getByDocument } = useAttachments();
   const { ensureApprovalRequest, getByRef, canPostByRef, postToGL } = useApproval();
   const cfoThreshold = getCFOThreshold();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchExpenses();
+        if (!cancelled && data) setExpenseList(data as ExpenseItem[]);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -510,6 +528,9 @@ export default function Expenses() {
     name: cat,
     value: expenseList.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter(c => c.value > 0);
+
+  if (loading) return <LoadingSpinner message="Loading expenses..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6 relative">
@@ -756,6 +777,7 @@ export default function Expenses() {
           onClose={() => setShowModal(false)}
           onSave={exp => {
             setExpenseList(prev => [exp, ...prev]);
+            upsertExpense(exp as any).catch(() => {});
             submitExpenseForApproval(exp);
             setShowModal(false);
           }}

@@ -1,6 +1,8 @@
 // ─── Approval Threshold Engine ────────────────────────────────────────────────
-// Reads CFO threshold from Settings (localStorage) and determines
+// Reads CFO threshold from Supabase app_settings and determines
 // which approver role is required based on amount and document type.
+
+import { fetchSetting } from '../lib/supabaseSync';
 
 export interface ThresholdRule {
   id: string;
@@ -25,16 +27,36 @@ export interface ApprovalRouting {
   ruleId: string;
 }
 
-// ─── Load CFO threshold from Settings localStorage ────────────────────────────
-export function getCFOThreshold(): number {
+// ─── Load CFO threshold from Supabase app_settings ────────────────────────────
+let _cachedThreshold: number = 5000;
+let _thresholdLoaded = false;
+
+// Call once on app load to warm the cache
+export async function loadCFOThreshold(): Promise<number> {
   try {
-    const enabled = localStorage.getItem('accountspro.approval.fixedCfoThreshold') === 'true';
-    if (!enabled) return 5000; // default
-    const amount = parseFloat(localStorage.getItem('accountspro.approval.cfoThresholdAmount') || '5000');
-    return isNaN(amount) ? 5000 : amount;
+    const [enabledRaw, amountRaw] = await Promise.all([
+      fetchSetting('accountspro.approval.fixedCfoThreshold'),
+      fetchSetting('accountspro.approval.cfoThresholdAmount'),
+    ]);
+    const enabled = enabledRaw === 'true';
+    if (!enabled) { _cachedThreshold = 5000; _thresholdLoaded = true; return 5000; }
+    const amount = parseFloat(amountRaw || '5000');
+    _cachedThreshold = isNaN(amount) ? 5000 : amount;
+    _thresholdLoaded = true;
+    return _cachedThreshold;
   } catch {
+    _thresholdLoaded = true;
     return 5000;
   }
+}
+
+// Synchronous getter — returns cached value (defaults to 5000 until loadCFOThreshold completes)
+export function getCFOThreshold(): number {
+  if (!_thresholdLoaded) {
+    // Fire-and-forget load on first call
+    loadCFOThreshold().catch(() => {});
+  }
+  return _cachedThreshold;
 }
 
 // ─── Build threshold rules from Settings ─────────────────────────────────────

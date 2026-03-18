@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Building2, Wallet, Globe, ArrowUpRight, ArrowDownRight, Plus, X, Save } from 'lucide-react';
-import { bankAccounts, payments } from '../data/mockData';
+import { fetchBankCashAccounts, fetchPayments, upsertPayment } from '../lib/supabaseSync';
+import type { BankAccount, Payment } from '../data/mockData';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 const transactionTypes = ['Receipt', 'Payment', 'Refund'];
 const paymentMethods = ['Bank Transfer', 'Card Payment', 'Cash', 'Cheque', 'Payment Link', 'Online'];
@@ -23,8 +25,28 @@ const emptyForm: TransactionForm = {
 export default function BankCash() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<TransactionForm>(emptyForm);
-  const [paymentList, setPaymentList] = useState(payments);
-  const [accountList] = useState(bankAccounts);
+  const [paymentList, setPaymentList] = useState<Payment[]>([]);
+  const [accountList, setAccountList] = useState<BankAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [accounts, pmts] = await Promise.all([fetchBankCashAccounts(), fetchPayments()]);
+        if (!cancelled) {
+          if (accounts) setAccountList(accounts);
+          if (pmts) setPaymentList(pmts);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const totalBalance = accountList.reduce((s, a) => s + a.balance, 0);
 
@@ -45,9 +67,13 @@ export default function BankCash() {
       status: 'Completed' as const,
     };
     setPaymentList(prev => [newPayment, ...prev]);
+    upsertPayment(newPayment).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
+
+  if (loading) return <LoadingSpinner message="Loading accounts..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

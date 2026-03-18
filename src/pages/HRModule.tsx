@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Users, Calendar, DollarSign, Plus, X, Save, Search,
   Shield, Eye, Edit, Trash2, Lock, Unlock, ChevronDown, ChevronUp,
@@ -7,8 +7,10 @@ import {
   ShoppingCart, Building2, Package, FileText, CreditCard,
   Globe, TrendingUp,
 } from 'lucide-react';
-import { employees } from '../data/mockData';
+import { fetchEmployees, upsertEmployee } from '../lib/supabaseSync';
+// Employee type from mockData used by supabaseSync internally
 import { usePresets } from '../context/PresetsContext';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 /* ─── Types ──────────────────────────────────────────────────── */
 type PermLevel = 'none' | 'view' | 'edit' | 'full';
@@ -351,14 +353,31 @@ export default function HRModule() {
   const [viewEmployee, setViewEmployee] = useState<Employee | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<EmployeeForm>({ ...emptyForm, permissions: defaultPermissions() });
-  const [employeeList, setEmployeeList] = useState<Employee[]>(
-    employees.map(e => ({
-      ...e,
-      systemAccess: false,
-      permissions: defaultPermissions(),
-      preset: 'No Access',
-    }))
-  );
+  const [employeeList, setEmployeeList] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchEmployees();
+        if (!cancelled && data) {
+          setEmployeeList(data.map((e: any) => ({
+            ...e,
+            systemAccess: e.systemAccess ?? false,
+            permissions: e.permissions ?? defaultPermissions(),
+            preset: e.preset ?? 'No Access',
+          })));
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   /* Filtered list */
   const filtered = employeeList.filter(e =>
@@ -420,6 +439,7 @@ export default function HRModule() {
       preset: form.selectedPreset,
     };
     setEmployeeList(prev => [newEmp, ...prev]);
+    upsertEmployee(newEmp).catch(() => {});
     setForm({ ...emptyForm, permissions: defaultPermissions() });
     setShowModal(false);
   };
@@ -433,6 +453,9 @@ export default function HRModule() {
   // Overall summary: total active modules
   const getActiveModules = (perms: Record<string, PermLevel>) =>
     ALL_MODULE_KEYS.filter(k => (perms[k] || 'none') !== 'none').length;
+
+  if (loading) return <LoadingSpinner message="Loading employees..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

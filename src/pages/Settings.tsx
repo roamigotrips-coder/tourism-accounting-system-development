@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon, Shield, Plus, Edit2, Trash2, X, Save,
   Lock, Eye, Unlock, ShoppingCart, Building2, Receipt, BarChart3,
@@ -7,6 +7,7 @@ import {
   Globe, TrendingUp, UserCheck, ShoppingBag, GitCompare
 } from 'lucide-react';
 import { usePresets, PermLevel, RolePreset } from '../context/PresetsContext';
+import { fetchSetting, saveSetting } from '../lib/supabaseSync';
 
 /* ─── Constants ──────────────────────────────────────────── */
 const LEVELS: PermLevel[] = ['none', 'view', 'edit', 'full'];
@@ -609,15 +610,22 @@ export default function Settings() {
   const [editPreset, setEditPreset] = useState<RolePreset | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RolePreset | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
-  const [useFixedCfoThreshold, setUseFixedCfoThreshold] = useState<boolean>(() => {
-    const raw = localStorage.getItem('accountspro.approval.fixedCfoThreshold');
-    return raw ? raw === 'true' : true;
-  });
-  const [cfoThresholdAmount, setCfoThresholdAmount] = useState<number>(() => {
-    const raw = localStorage.getItem('accountspro.approval.cfoThresholdAmount');
-    const parsed = raw ? Number(raw) : 5000;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
-  });
+  const [useFixedCfoThreshold, setUseFixedCfoThreshold] = useState<boolean>(true);
+  const [cfoThresholdAmount, setCfoThresholdAmount] = useState<number>(5000);
+
+  useEffect(() => {
+    (async () => {
+      const [fixedRaw, amountRaw] = await Promise.all([
+        fetchSetting('accountspro.approval.fixedCfoThreshold'),
+        fetchSetting('accountspro.approval.cfoThresholdAmount'),
+      ]);
+      if (fixedRaw !== null) setUseFixedCfoThreshold(fixedRaw === 'true');
+      if (amountRaw !== null) {
+        const parsed = Number(amountRaw);
+        if (Number.isFinite(parsed) && parsed > 0) setCfoThresholdAmount(parsed);
+      }
+    })().catch(() => {});
+  }, []);
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -674,8 +682,8 @@ export default function Settings() {
 
   const saveApprovalControls = () => {
     const safeAmount = Number.isFinite(cfoThresholdAmount) && cfoThresholdAmount > 0 ? cfoThresholdAmount : 5000;
-    localStorage.setItem('accountspro.approval.fixedCfoThreshold', String(useFixedCfoThreshold));
-    localStorage.setItem('accountspro.approval.cfoThresholdAmount', String(safeAmount));
+    saveSetting('accountspro.approval.fixedCfoThreshold', String(useFixedCfoThreshold)).catch(() => {});
+    saveSetting('accountspro.approval.cfoThresholdAmount', String(safeAmount)).catch(() => {});
     setCfoThresholdAmount(safeAmount);
     showSuccess('Approval controls saved. CFO threshold updated.');
   };

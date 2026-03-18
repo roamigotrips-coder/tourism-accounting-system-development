@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Clock, CheckCircle, AlertTriangle, Sparkles, ArrowRight, BookOpen, CreditCard, ShoppingBag, Users, Building2, Zap, ArrowUpCircle, ArrowDownCircle, Activity } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAccountingEngine } from '../context/AccountingEngine';
 import { useBookingEstimates } from '../context/BookingEstimateContext';
-import { agents } from '../data/mockData';
+import { fetchAgents } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import type { Agent } from '../data/mockData';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -63,6 +66,25 @@ export default function Dashboard() {
   const { trialBalance, entries, transactionLock } = useAccountingEngine();
   const { estimates, pendingCount } = useBookingEstimates();
 
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchAgents();
+        if (!cancelled && data) setAgents(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // ── GL-derived KPIs ──────────────────────────────────────────────────────────
   const glRevenue  = trialBalance.filter(t => t.accountType === 'Revenue') .reduce((s, t) => s + t.closingBalance, 0);
   const glExpenses = trialBalance.filter(t => t.accountType === 'Expense') .reduce((s, t) => s + t.closingBalance, 0);
@@ -118,6 +140,9 @@ export default function Dashboard() {
 
   // ── Top agents by outstanding ─────────────────────────────────────────────────
   const topAgents = agents.slice(0, 4);
+
+  if (loading) return <LoadingSpinner message="Loading..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

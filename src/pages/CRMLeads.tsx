@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Phone, Mail, ArrowRight, Search, X, Save } from 'lucide-react';
-import { leads } from '../data/mockData';
+import { fetchLeads, upsertLead } from '../lib/supabaseSync';
+import type { Lead } from '../data/mockData';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 const statuses = ['All', 'New', 'Contacted', 'Quoted', 'Converted', 'Lost'];
 const sources = ['Website', 'WhatsApp', 'Email', 'Walk-in', 'Travel Agent'];
@@ -43,7 +45,24 @@ export default function CRMLeads() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<LeadForm>(emptyForm);
-  const [leadList, setLeadList] = useState(leads);
+  const [leadList, setLeadList] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchLeads();
+        if (!cancelled && data) setLeadList(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = leadList.filter(l =>
     (filter === 'All' || l.status === filter) &&
@@ -74,13 +93,24 @@ export default function CRMLeads() {
       date: new Date().toISOString().split('T')[0],
     };
     setLeadList(prev => [newLead, ...prev] as typeof prev);
+    upsertLead(newLead).catch(() => {});
     setForm(emptyForm);
     setShowModal(false);
   };
 
   const handleConvert = (id: string) => {
-    setLeadList(prev => prev.map(l => l.id === id ? { ...l, status: 'Converted' } : l));
+    setLeadList(prev => prev.map(l => {
+      if (l.id === id) {
+        const updated = { ...l, status: 'Converted' as const };
+        upsertLead(updated).catch(() => {});
+        return updated;
+      }
+      return l;
+    }));
   };
+
+  if (loading) return <LoadingSpinner message="Loading leads..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

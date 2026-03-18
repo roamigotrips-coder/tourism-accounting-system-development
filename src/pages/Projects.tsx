@@ -1,28 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Clock, Save, User, Folder, PenSquare, Trash2 } from 'lucide-react';
-
-// Simple local persistence helpers
-const LS_KEY = 'ap_projects_v1';
-
-type TimeEntry = {
-  id: string;
-  projectId: string;
-  user: string;
-  date: string; // yyyy-mm-dd
-  notes?: string;
-  durationMin: number; // stored minutes
-};
-
-type Project = {
-  id: string;
-  name: string;
-  client?: string;
-  code?: string;
-  status: 'Active' | 'Paused' | 'Completed';
-  hourlyRate: number; // in base currency
-  budgetHours?: number; // optional
-  createdAt: string;
-};
+import {
+  fetchProjects as fetchProjectsDb, upsertProject as upsertProjectDb, deleteProjectDb,
+  fetchTimeEntries as fetchTimeEntriesDb, upsertTimeEntry as upsertTimeEntryDb, deleteTimeEntryDb,
+  type Project, type TimeEntry,
+} from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 function minutesToHhmm(mins: number) {
   const h = Math.floor(mins / 60);
@@ -37,21 +20,26 @@ export default function Projects() {
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load / save
+  // Load from Supabase
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        setProjects(data.projects || []);
-        setEntries(data.entries || []);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [projs, ents] = await Promise.all([fetchProjectsDb(), fetchTimeEntriesDb()]);
+        if (cancelled) return;
+        if (projs) setProjects(projs);
+        if (ents) setEntries(ents);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Failed to load projects');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch {}
+    })();
+    return () => { cancelled = true; };
   }, []);
-  useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify({ projects, entries }));
-  }, [projects, entries]);
 
   // Derived
   const totals = useMemo(() => {
@@ -83,9 +71,13 @@ export default function Projects() {
     e.preventDefault();
     if (!pForm.name || !pForm.status) return;
     if (editingProject) {
-      setProjects(prev => prev.map(pp => pp.id === editingProject.id ? { ...(pp as Project), ...(pForm as Project) } : pp));
+      const updated = { ...(editingProject as Project), ...(pForm as Project) };
+      setProjects(prev => prev.map(pp => pp.id === editingProject.id ? updated : pp));
+      upsertProjectDb(updated).catch(() => {});
     } else {
-      setProjects(prev => [...prev, { id: `PROJ-${Date.now()}`, name: pForm.name!, client: pForm.client||'', code: pForm.code||'', status: (pForm.status as any)||'Active', hourlyRate: Number(pForm.hourlyRate)||0, budgetHours: pForm.budgetHours ? Number(pForm.budgetHours) : undefined, createdAt: new Date().toISOString() }]);
+      const newProj: Project = { id: `PROJ-${Date.now()}`, name: pForm.name!, client: pForm.client||'', code: pForm.code||'', status: (pForm.status as any)||'Active', hourlyRate: Number(pForm.hourlyRate)||0, budgetHours: pForm.budgetHours ? Number(pForm.budgetHours) : undefined, createdAt: new Date().toISOString() };
+      setProjects(prev => [...prev, newProj]);
+      upsertProjectDb(newProj).catch(() => {});
     }
     setShowProjectModal(false);
   };
@@ -94,19 +86,29 @@ export default function Projects() {
     e.preventDefault();
     if (!tForm.projectId || !tForm.date || !tForm.durationMin) return;
     if (editingEntry) {
-      setEntries(prev => prev.map(te => te.id === editingEntry.id ? { ...(te as TimeEntry), ...(tForm as TimeEntry), durationMin: Number(tForm.durationMin) } : te));
+      const updated: TimeEntry = { ...(editingEntry as TimeEntry), ...(tForm as TimeEntry), durationMin: Number(tForm.durationMin) };
+      setEntries(prev => prev.map(te => te.id === editingEntry.id ? updated : te));
+      upsertTimeEntryDb(updated).catch(() => {});
     } else {
-      setEntries(prev => [...prev, { id: `TE-${Date.now()}`, projectId: String(tForm.projectId), user: tForm.user||'Unassigned', date: String(tForm.date), notes: tForm.notes||'', durationMin: Number(tForm.durationMin)||0 }]);
+      const newEntry: TimeEntry = { id: `TE-${Date.now()}`, projectId: String(tForm.projectId), user: tForm.user||'Unassigned', date: String(tForm.date), notes: tForm.notes||'', durationMin: Number(tForm.durationMin)||0 };
+      setEntries(prev => [...prev, newEntry]);
+      upsertTimeEntryDb(newEntry).catch(() => {});
     }
     setShowEntryModal(false);
   };
 
   const deleteProject = (id: string) => {
-    // prevent deletion if entries exist
     if (entries.some(e => e.projectId === id)) return alert('Cannot delete: this project has time entries.');
     setProjects(prev => prev.filter(p => p.id !== id));
+    deleteProjectDb(id).catch(() => {});
   };
-  const deleteEntry = (id: string) => setEntries(prev => prev.filter(e => e.id !== id));
+  const deleteEntry = (id: string) => {
+    setEntries(prev => prev.filter(e => e.id !== id));
+    deleteTimeEntryDb(id).catch(() => {});
+  };
+
+  if (loading) return <LoadingSpinner message="Loading projects..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">
