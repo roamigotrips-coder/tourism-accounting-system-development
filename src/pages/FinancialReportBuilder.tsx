@@ -3,7 +3,7 @@ import {
   Plus, Trash2, GripVertical, X, Download, Save,
   ChevronDown, ChevronRight, BarChart2, Calculator,
 } from 'lucide-react';
-import { mockAccountData } from './ChartOfAccounts';
+import { useAccountingEngine } from '../context/AccountingEngine';
 import { useCurrency } from '../context/CurrencyContext';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -51,12 +51,13 @@ const DEFAULT: ReportSection[] = [
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function FinancialReportBuilder() {
   const { baseCurrency, currencies, convert } = useCurrency();
+  const { accounts: rawAccounts } = useAccountingEngine();
 
   const allAccounts: GLAccount[] = useMemo(() =>
-    mockAccountData().map(a => ({
+    rawAccounts.map((a: { id: string; code: string; name: string; type: string; openingBalance: number }) => ({
       id: a.id, code: a.code, name: a.name,
-      type: a.type as AccountType, balance: a.balance.current,
-    })), []);
+      type: a.type as AccountType, balance: a.openingBalance,
+    })), [rawAccounts]);
 
   const accountMap = useMemo(() =>
     Object.fromEntries(allAccounts.map(a => [a.id, a])), [allAccounts]);

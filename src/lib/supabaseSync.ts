@@ -1817,3 +1817,481 @@ export async function upsertRetainers(retainers: Retainer[]): Promise<void> {
 export async function deleteRetainerDb(id: string): Promise<void> {
   await supabase.from('retainers').delete().eq('id', id);
 }
+
+/* ─── PURCHASE ORDERS ──────────────────────────────────────── */
+
+export interface PurchaseOrderItem {
+  id: string;
+  purchaseOrderId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  supplier: string;
+  supplierType: string;
+  date: string;
+  dueDate: string;
+  items: PurchaseOrderItem[];
+  subtotal: number;
+  vat: number;
+  total: number;
+  currency: string;
+  status: 'draft' | 'pending' | 'approved' | 'received' | 'cancelled';
+  paymentStatus: 'unpaid' | 'partial' | 'paid';
+  linkedBooking?: string;
+  notes?: string;
+}
+
+function dbToPurchaseOrder(row: any, items: any[]): PurchaseOrder {
+  return {
+    id: row.id,
+    poNumber: row.po_number,
+    supplier: row.supplier,
+    supplierType: row.supplier_type,
+    date: row.date,
+    dueDate: row.due_date,
+    items: items.filter(i => i.purchase_order_id === row.id).map(i => ({
+      id: i.id, purchaseOrderId: i.purchase_order_id,
+      description: i.description, quantity: i.quantity,
+      unitPrice: i.unit_price, total: i.total,
+    })),
+    subtotal: row.subtotal,
+    vat: row.vat,
+    total: row.total,
+    currency: row.currency,
+    status: row.status,
+    paymentStatus: row.payment_status,
+    linkedBooking: row.linked_booking ?? undefined,
+    notes: row.notes ?? undefined,
+  };
+}
+
+export async function fetchPurchaseOrders(): Promise<PurchaseOrder[] | null> {
+  const [{ data: orders, error: e1 }, { data: items }] = await Promise.all([
+    supabase.from('purchase_orders').select('*'),
+    supabase.from('purchase_order_items').select('*'),
+  ]);
+  if (e1 || !orders) return null;
+  return orders.map(o => dbToPurchaseOrder(o, items ?? []));
+}
+
+export async function upsertPurchaseOrder(po: PurchaseOrder): Promise<void> {
+  await supabase.from('purchase_orders').upsert({
+    id: po.id, po_number: po.poNumber, supplier: po.supplier,
+    supplier_type: po.supplierType, date: po.date, due_date: po.dueDate,
+    subtotal: po.subtotal, vat: po.vat, total: po.total,
+    currency: po.currency, status: po.status, payment_status: po.paymentStatus,
+    linked_booking: po.linkedBooking ?? null, notes: po.notes ?? null,
+  }, { onConflict: 'id' });
+  // Upsert items
+  if (po.items.length > 0) {
+    await supabase.from('purchase_order_items').upsert(
+      po.items.map(i => ({
+        id: i.id, purchase_order_id: po.id,
+        description: i.description, quantity: i.quantity,
+        unit_price: i.unitPrice, total: i.total,
+      })),
+      { onConflict: 'id' }
+    );
+  }
+}
+
+export async function deletePurchaseOrderDb(id: string): Promise<void> {
+  await supabase.from('purchase_orders').delete().eq('id', id);
+}
+
+/* ─── RECURRING BILLING ────────────────────────────────────── */
+
+export interface RecurringBillingEntry {
+  id: string;
+  name: string;
+  frequency: string;
+  amount: number;
+  debitAccountId: string;
+  creditAccountId: string;
+  description: string;
+  nextRunDate: string | null;
+  startDate: string;
+  status: string;
+  lastRunDate: string | null;
+  runCount: number;
+}
+
+function dbToRecurringBilling(row: any): RecurringBillingEntry {
+  return {
+    id: row.id, name: row.name, frequency: row.frequency,
+    amount: row.amount, debitAccountId: row.debit_account_id,
+    creditAccountId: row.credit_account_id, description: row.description,
+    nextRunDate: row.next_run_date, startDate: row.start_date,
+    status: row.status, lastRunDate: row.last_run_date, runCount: row.run_count,
+  };
+}
+
+function recurringBillingToDb(r: RecurringBillingEntry) {
+  return {
+    id: r.id, name: r.name, frequency: r.frequency, amount: r.amount,
+    debit_account_id: r.debitAccountId, credit_account_id: r.creditAccountId,
+    description: r.description, next_run_date: r.nextRunDate,
+    start_date: r.startDate, status: r.status,
+    last_run_date: r.lastRunDate, run_count: r.runCount,
+  };
+}
+
+export async function fetchRecurringBilling(): Promise<RecurringBillingEntry[] | null> {
+  const { data, error } = await supabase.from('recurring_billing').select('*');
+  if (error || !data) return null;
+  return data.map(dbToRecurringBilling);
+}
+
+export async function upsertRecurringBilling(entry: RecurringBillingEntry): Promise<void> {
+  await supabase.from('recurring_billing').upsert(recurringBillingToDb(entry), { onConflict: 'id' });
+}
+
+export async function deleteRecurringBillingDb(id: string): Promise<void> {
+  await supabase.from('recurring_billing').delete().eq('id', id);
+}
+
+/* ─── RECURRING PROFILES ───────────────────────────────────── */
+
+export interface RecurringProfile {
+  id: string;
+  customerId: string;
+  customerName: string;
+  planName: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  startDate: string;
+  endDate: string | null;
+  amount: number;
+  currency: string;
+  status: 'active' | 'paused' | 'cancelled' | 'expired';
+  billingAnchorDay: number;
+  nextBillingDate: string;
+  lastBilledDate: string | null;
+  totalBilled: number;
+  invoiceCount: number;
+  createdAt: string;
+}
+
+function dbToRecurringProfile(row: any): RecurringProfile {
+  return {
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name,
+    planName: row.plan_name, frequency: row.frequency, startDate: row.start_date,
+    endDate: row.end_date, amount: row.amount, currency: row.currency,
+    status: row.status, billingAnchorDay: row.billing_anchor_day,
+    nextBillingDate: row.next_billing_date ?? '', lastBilledDate: row.last_billed_date,
+    totalBilled: row.total_billed, invoiceCount: row.invoice_count,
+    createdAt: row.created_at,
+  };
+}
+
+function recurringProfileToDb(r: RecurringProfile) {
+  return {
+    id: r.id, customer_id: r.customerId, customer_name: r.customerName,
+    plan_name: r.planName, frequency: r.frequency, start_date: r.startDate,
+    end_date: r.endDate, amount: r.amount, currency: r.currency,
+    status: r.status, billing_anchor_day: r.billingAnchorDay,
+    next_billing_date: r.nextBillingDate || null, last_billed_date: r.lastBilledDate,
+    total_billed: r.totalBilled, invoice_count: r.invoiceCount,
+  };
+}
+
+export async function fetchRecurringProfiles(): Promise<RecurringProfile[] | null> {
+  const { data, error } = await supabase.from('recurring_profiles').select('*');
+  if (error || !data) return null;
+  return data.map(dbToRecurringProfile);
+}
+
+export async function upsertRecurringProfile(profile: RecurringProfile): Promise<void> {
+  await supabase.from('recurring_profiles').upsert(recurringProfileToDb(profile), { onConflict: 'id' });
+}
+
+export async function deleteRecurringProfileDb(id: string): Promise<void> {
+  await supabase.from('recurring_profiles').delete().eq('id', id);
+}
+
+/* ─── RECURRING INVOICES ───────────────────────────────────── */
+
+export interface RecurringInvoiceRecord {
+  id: string;
+  profileId: string;
+  customerName: string;
+  planName: string;
+  invoiceId: string | null;
+  generationDate: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  currency: string;
+  isProrated: boolean;
+  status: 'generated' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+}
+
+function dbToRecurringInvoice(row: any): RecurringInvoiceRecord {
+  return {
+    id: row.id, profileId: row.profile_id, customerName: row.customer_name,
+    planName: row.plan_name, invoiceId: row.invoice_id,
+    generationDate: row.generation_date, periodStart: row.period_start,
+    periodEnd: row.period_end, amount: row.amount, currency: row.currency,
+    isProrated: row.is_prorated, status: row.status,
+  };
+}
+
+function recurringInvoiceToDb(r: RecurringInvoiceRecord) {
+  return {
+    id: r.id, profile_id: r.profileId, customer_name: r.customerName,
+    plan_name: r.planName, invoice_id: r.invoiceId,
+    generation_date: r.generationDate, period_start: r.periodStart,
+    period_end: r.periodEnd, amount: r.amount, currency: r.currency,
+    is_prorated: r.isProrated, status: r.status,
+  };
+}
+
+export async function fetchRecurringInvoices(): Promise<RecurringInvoiceRecord[] | null> {
+  const { data, error } = await supabase.from('recurring_invoices').select('*');
+  if (error || !data) return null;
+  return data.map(dbToRecurringInvoice);
+}
+
+export async function upsertRecurringInvoice(inv: RecurringInvoiceRecord): Promise<void> {
+  await supabase.from('recurring_invoices').upsert(recurringInvoiceToDb(inv), { onConflict: 'id' });
+}
+
+export async function deleteRecurringInvoiceDb(id: string): Promise<void> {
+  await supabase.from('recurring_invoices').delete().eq('id', id);
+}
+
+/* ─── INVENTORY ITEMS ──────────────────────────────────────── */
+
+export interface InventoryItem {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  minStockLevel: number;
+  maxStockLevel: number;
+  unitCost: number;
+  location: string;
+  status: string;
+  supplier: string;
+  lastReorderDate?: string;
+}
+
+function dbToInventoryItem(row: any): InventoryItem {
+  return {
+    id: row.id, code: row.code, name: row.name, category: row.category,
+    description: row.description, unit: row.unit, quantity: row.quantity,
+    minStockLevel: row.min_stock_level, maxStockLevel: row.max_stock_level,
+    unitCost: row.unit_cost, location: row.location, status: row.status,
+    supplier: row.supplier, lastReorderDate: row.last_reorder_date ?? undefined,
+  };
+}
+
+function inventoryItemToDb(i: InventoryItem) {
+  return {
+    id: i.id, code: i.code, name: i.name, category: i.category,
+    description: i.description, unit: i.unit, quantity: i.quantity,
+    min_stock_level: i.minStockLevel, max_stock_level: i.maxStockLevel,
+    unit_cost: i.unitCost, location: i.location, status: i.status,
+    supplier: i.supplier, last_reorder_date: i.lastReorderDate ?? null,
+  };
+}
+
+export async function fetchInventoryItems(): Promise<InventoryItem[] | null> {
+  const { data, error } = await supabase.from('inventory_items').select('*');
+  if (error || !data) return null;
+  return data.map(dbToInventoryItem);
+}
+
+export async function upsertInventoryItem(item: InventoryItem): Promise<void> {
+  await supabase.from('inventory_items').upsert(inventoryItemToDb(item), { onConflict: 'id' });
+}
+
+export async function deleteInventoryItemDb(id: string): Promise<void> {
+  await supabase.from('inventory_items').delete().eq('id', id);
+}
+
+/* ─── FIXED ASSETS ─────────────────────────────────────────── */
+
+export interface FixedAsset {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+  location: string;
+  purchaseDate: string;
+  purchasePrice: number;
+  salvageValue: number;
+  usefulLifeYears: number;
+  depreciationMethod: string;
+  accumulatedDepreciation: number;
+  currentValue: number;
+  status: string;
+  assignedTo?: string;
+  warrantyExpiry?: string;
+  maintenanceDate?: string;
+}
+
+function dbToFixedAsset(row: any): FixedAsset {
+  return {
+    id: row.id, code: row.code, name: row.name, category: row.category,
+    description: row.description, location: row.location,
+    purchaseDate: row.purchase_date, purchasePrice: row.purchase_price,
+    salvageValue: row.salvage_value, usefulLifeYears: row.useful_life_years,
+    depreciationMethod: row.depreciation_method,
+    accumulatedDepreciation: row.accumulated_depreciation,
+    currentValue: row.current_value, status: row.status,
+    assignedTo: row.assigned_to ?? undefined,
+    warrantyExpiry: row.warranty_expiry ?? undefined,
+    maintenanceDate: row.maintenance_date ?? undefined,
+  };
+}
+
+function fixedAssetToDb(a: FixedAsset) {
+  return {
+    id: a.id, code: a.code, name: a.name, category: a.category,
+    description: a.description, location: a.location,
+    purchase_date: a.purchaseDate, purchase_price: a.purchasePrice,
+    salvage_value: a.salvageValue, useful_life_years: a.usefulLifeYears,
+    depreciation_method: a.depreciationMethod,
+    accumulated_depreciation: a.accumulatedDepreciation,
+    current_value: a.currentValue, status: a.status,
+    assigned_to: a.assignedTo ?? null,
+    warranty_expiry: a.warrantyExpiry ?? null,
+    maintenance_date: a.maintenanceDate ?? null,
+  };
+}
+
+export async function fetchFixedAssets(): Promise<FixedAsset[] | null> {
+  const { data, error } = await supabase.from('fixed_assets').select('*');
+  if (error || !data) return null;
+  return data.map(dbToFixedAsset);
+}
+
+export async function upsertFixedAsset(asset: FixedAsset): Promise<void> {
+  await supabase.from('fixed_assets').upsert(fixedAssetToDb(asset), { onConflict: 'id' });
+}
+
+export async function deleteFixedAssetDb(id: string): Promise<void> {
+  await supabase.from('fixed_assets').delete().eq('id', id);
+}
+
+/* ─── CURRENCY POSTING DOCS ────────────────────────────────── */
+
+export interface CurrencyPostingDoc {
+  id: string;
+  type: 'invoice' | 'expense' | 'payment' | 'journal';
+  reference: string;
+  party: string;
+  foreignCurrency: string;
+  foreignAmount: number;
+  exchangeRate: number;
+  baseAmount: number;
+  status: 'pending' | 'posted' | 'failed';
+  postingDate: string;
+  lines: { account: string; accountCode: string; debitBase: number; creditBase: number }[];
+}
+
+function dbToCurrencyPostingDoc(row: any): CurrencyPostingDoc {
+  return {
+    id: row.id, type: row.type, reference: row.reference, party: row.party,
+    foreignCurrency: row.foreign_currency, foreignAmount: row.foreign_amount,
+    exchangeRate: row.exchange_rate, baseAmount: row.base_amount,
+    status: row.status, postingDate: row.posting_date,
+    lines: row.lines ?? [],
+  };
+}
+
+function currencyPostingDocToDb(d: CurrencyPostingDoc) {
+  return {
+    id: d.id, type: d.type, reference: d.reference, party: d.party,
+    foreign_currency: d.foreignCurrency, foreign_amount: d.foreignAmount,
+    exchange_rate: d.exchangeRate, base_amount: d.baseAmount,
+    status: d.status, posting_date: d.postingDate,
+    lines: JSON.stringify(d.lines),
+  };
+}
+
+export async function fetchCurrencyPostingDocs(): Promise<CurrencyPostingDoc[] | null> {
+  const { data, error } = await supabase.from('currency_posting_docs').select('*');
+  if (error || !data) return null;
+  return data.map(dbToCurrencyPostingDoc);
+}
+
+export async function upsertCurrencyPostingDoc(doc: CurrencyPostingDoc): Promise<void> {
+  await supabase.from('currency_posting_docs').upsert(currencyPostingDocToDb(doc), { onConflict: 'id' });
+}
+
+export async function deleteCurrencyPostingDocDb(id: string): Promise<void> {
+  await supabase.from('currency_posting_docs').delete().eq('id', id);
+}
+
+/* ─── SUPPLIER AUTOMATION RULES ────────────────────────────── */
+
+export interface SupplierAutomationRule {
+  id: string;
+  name: string;
+  supplier: string;
+  status: string;
+  lastRun: string;
+  matches: number;
+}
+
+function dbToSupplierAutomationRule(row: any): SupplierAutomationRule {
+  return {
+    id: row.id, name: row.name, supplier: row.supplier,
+    status: row.status, lastRun: row.last_run ?? '', matches: row.matches,
+  };
+}
+
+export async function fetchSupplierAutomationRules(): Promise<SupplierAutomationRule[] | null> {
+  const { data, error } = await supabase.from('supplier_automation_rules').select('*');
+  if (error || !data) return null;
+  return data.map(dbToSupplierAutomationRule);
+}
+
+export async function upsertSupplierAutomationRule(rule: SupplierAutomationRule): Promise<void> {
+  await supabase.from('supplier_automation_rules').upsert({
+    id: rule.id, name: rule.name, supplier: rule.supplier,
+    status: rule.status, last_run: rule.lastRun, matches: rule.matches,
+  }, { onConflict: 'id' });
+}
+
+/* ─── SUPPLIER PENDING INVOICES ────────────────────────────── */
+
+export interface SupplierPendingInvoice {
+  id: string;
+  supplier: string;
+  amount: number;
+  bookings: number;
+  status: string;
+  uploadDate: string;
+}
+
+function dbToSupplierPendingInvoice(row: any): SupplierPendingInvoice {
+  return {
+    id: row.id, supplier: row.supplier, amount: row.amount,
+    bookings: row.bookings, status: row.status, uploadDate: row.upload_date,
+  };
+}
+
+export async function fetchSupplierPendingInvoices(): Promise<SupplierPendingInvoice[] | null> {
+  const { data, error } = await supabase.from('supplier_pending_invoices').select('*');
+  if (error || !data) return null;
+  return data.map(dbToSupplierPendingInvoice);
+}
+
+export async function upsertSupplierPendingInvoice(inv: SupplierPendingInvoice): Promise<void> {
+  await supabase.from('supplier_pending_invoices').upsert({
+    id: inv.id, supplier: inv.supplier, amount: inv.amount,
+    bookings: inv.bookings, status: inv.status, upload_date: inv.uploadDate,
+  }, { onConflict: 'id' });
+}

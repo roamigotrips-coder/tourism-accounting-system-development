@@ -1,33 +1,17 @@
 import { useState, useMemo } from 'react';
 import { Book, Plus, Search, Download, AlertCircle } from 'lucide-react';
-
-export function mockAccountData() {
-  // Added FX Gain/Loss default accounts for multi-currency
-  // 9999 Unrealized FX Gain (Revenue), 9998 Unrealized FX Loss (Expense)
-
-  return [
-    { id: 'A001', code: '1000', name: 'Cash', type: 'Asset', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 87500, creditTotal: 0, current: 87500 }, lastTransactionDate: '2024-01-25' },
-    { id: 'A002', code: '1100', name: 'Bank Account', type: 'Asset', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 150000, creditTotal: 0, current: 150000 }, lastTransactionDate: '2024-01-25' },
-    { id: 'A003', code: '1200', name: 'Accounts Receivable', type: 'Asset', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 45000, creditTotal: 0, current: 45000 }, lastTransactionDate: '2024-01-20' },
-    { id: 'A004', code: '1300', name: 'Inventory', type: 'Asset', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 25000, creditTotal: 0, current: 25000 }, lastTransactionDate: '2024-01-18' },
-    { id: 'A005', code: '1500', name: 'Fixed Assets', type: 'Asset', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 328000, creditTotal: 0, current: 328000 }, lastTransactionDate: '2024-01-15' },
-    { id: 'A006', code: '2000', name: 'Accounts Payable', type: 'Liability', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 32000, current: -32000 }, lastTransactionDate: '2024-01-22' },
-    { id: 'A007', code: '2100', name: 'Accrued Expenses', type: 'Liability', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 8000, current: -8000 }, lastTransactionDate: '2024-01-20' },
-    { id: 'A008', code: '3000', name: 'Owner Equity', type: 'Equity', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 500000, current: -500000 }, lastTransactionDate: '2024-01-01' },
-    { id: 'A009', code: '3100', name: 'Retained Earnings', type: 'Equity', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 25000, current: -25000 }, lastTransactionDate: '2024-01-01' },
-    { id: 'A010', code: '4000', name: 'Sales Revenue', type: 'Revenue', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 285000, current: -285000 }, lastTransactionDate: '2024-01-25' },
-    { id: 'A011', code: '4100', name: 'Service Income', type: 'Revenue', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 95000, current: -95000 }, lastTransactionDate: '2024-01-23' },
-    { id: 'A012', code: '5000', name: 'Office Expense', type: 'Expense', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 24000, creditTotal: 0, current: 24000 }, lastTransactionDate: '2024-01-18' },
-    { id: 'A013', code: '5100', name: 'Salaries', type: 'Expense', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 85000, creditTotal: 0, current: 85000 }, lastTransactionDate: '2024-01-25' },
-    { id: 'A014', code: '5200', name: 'Marketing', type: 'Expense', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 18000, creditTotal: 0, current: 18000 }, lastTransactionDate: '2024-01-20' },
-    { id: 'A015', code: '5300', name: 'Travel & Transport', type: 'Expense', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 35000, creditTotal: 0, current: 35000 }, lastTransactionDate: '2024-01-22' },
-{ id: 'A016', code: '9999', name: 'Unrealized FX Gain', type: 'Revenue', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 0, current: 0 }, lastTransactionDate: '2024-01-01' },
-{ id: 'A017', code: '9998', name: 'Unrealized FX Loss', type: 'Expense', status: 'Active', isDefault: true, parentId: undefined, balance: { opening: 0, debitTotal: 0, creditTotal: 0, current: 0 }, lastTransactionDate: '2024-01-01' },
-  ];
-}
+import { useAccountingEngine } from '../context/AccountingEngine';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 export default function ChartOfAccounts() {
-  const accounts = mockAccountData();
+  const { accounts: rawAccounts, loading, error } = useAccountingEngine();
+
+  const accounts = useMemo(() => rawAccounts.map(a => ({
+    id: a.id, code: a.code, name: a.name, type: a.type,
+    status: a.status, isDefault: a.isDefault, parentId: a.parentId,
+    balance: { opening: a.openingBalance, debitTotal: 0, creditTotal: 0, current: a.openingBalance },
+    lastTransactionDate: '',
+  })), [rawAccounts]);
   
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +44,9 @@ export default function ChartOfAccounts() {
   }, [accounts]);
 
   const accountTypes = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] as const;
+
+  if (loading) return <LoadingSpinner message="Loading accounts..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="p-6 space-y-6">

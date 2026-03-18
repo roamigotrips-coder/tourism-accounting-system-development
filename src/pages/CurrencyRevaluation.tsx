@@ -14,12 +14,8 @@ import {
 } from '../utils/revaluationEngine';
 import { useCurrency } from '../context/CurrencyContext';
 
-// ─── Sample rate map for demo ─────────────────────────────────────────────────
-const DEMO_RATES: Record<string, Record<string, number>> = {
-  '2024-01': { USD: 3.70, EUR: 4.05, GBP: 4.72, SAR: 0.988 },
-  '2024-02': { USD: 3.68, EUR: 4.02, GBP: 4.68, SAR: 0.981 },
-  '2024-03': { USD: 3.69, EUR: 4.08, GBP: 4.75, SAR: 0.985 },
-};
+// Rate map — populated from Supabase via CurrencyContext; no hardcoded demo rates
+const DEMO_RATES: Record<string, Record<string, number>> = {};
 
 function StatusBadge({ type }: { type: string }) {
   const map: Record<string, string> = {

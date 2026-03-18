@@ -326,85 +326,9 @@ export function generateReversalJE(
   return reversal;
 }
 
-// ─── Sample Open Documents (for demo) ─────────────────────────────────────────
+// ─── Open Documents — fetched from Supabase; returns empty until real data exists
 export function getSampleOpenDocuments(): OpenDocument[] {
-  return [
-    {
-      id: 'INV-001',
-      docNumber: 'INV-2024-001',
-      docType: 'Invoice',
-      party: 'Global Tours LLC',
-      partyType: 'Customer',
-      currency: 'USD',
-      foreignAmount: 1000,
-      bookedRate: 3.67,
-      bookedBase: 3670,
-      docDate: '2024-01-15',
-      dueDate: '2024-02-15',
-      glAccount: '1200',
-      glAccountName: 'Accounts Receivable',
-    },
-    {
-      id: 'INV-002',
-      docNumber: 'INV-2024-002',
-      docType: 'Invoice',
-      party: 'European Travel Co',
-      partyType: 'Customer',
-      currency: 'EUR',
-      foreignAmount: 2500,
-      bookedRate: 4.01,
-      bookedBase: 10025,
-      docDate: '2024-01-18',
-      dueDate: '2024-02-18',
-      glAccount: '1200',
-      glAccountName: 'Accounts Receivable',
-    },
-    {
-      id: 'BILL-001',
-      docNumber: 'BILL-2024-001',
-      docType: 'Bill',
-      party: 'InterHotel Group',
-      partyType: 'Supplier',
-      currency: 'USD',
-      foreignAmount: 800,
-      bookedRate: 3.67,
-      bookedBase: 2936,
-      docDate: '2024-01-10',
-      dueDate: '2024-02-10',
-      glAccount: '2000',
-      glAccountName: 'Accounts Payable',
-    },
-    {
-      id: 'INV-003',
-      docNumber: 'INV-2024-003',
-      docType: 'Invoice',
-      party: 'UK Adventures Ltd',
-      partyType: 'Customer',
-      currency: 'GBP',
-      foreignAmount: 1500,
-      bookedRate: 4.65,
-      bookedBase: 6975,
-      docDate: '2024-01-20',
-      dueDate: '2024-02-20',
-      glAccount: '1200',
-      glAccountName: 'Accounts Receivable',
-    },
-    {
-      id: 'BILL-002',
-      docNumber: 'BILL-2024-002',
-      docType: 'Bill',
-      party: 'Euro Bus Services',
-      partyType: 'Supplier',
-      currency: 'EUR',
-      foreignAmount: 1200,
-      bookedRate: 4.01,
-      bookedBase: 4812,
-      docDate: '2024-01-12',
-      dueDate: '2024-02-12',
-      glAccount: '2000',
-      glAccountName: 'Accounts Payable',
-    },
-  ];
+  return [];
 }
 
 // ─── Accounting Periods ───────────────────────────────────────────────────────

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Building2, Wallet, Globe, ArrowUpRight, ArrowDownRight, Plus, X, Save } from 'lucide-react';
-import { fetchBankCashAccounts, fetchPayments, upsertPayment } from '../lib/supabaseSync';
+import { fetchBankCashAccounts, fetchPayments, upsertPayment, fetchAgents, fetchSuppliers } from '../lib/supabaseSync';
 import type { BankAccount, Payment } from '../data/mockData';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 const transactionTypes = ['Receipt', 'Payment', 'Refund'];
 const paymentMethods = ['Bank Transfer', 'Card Payment', 'Cash', 'Cheque', 'Payment Link', 'Online'];
-const parties = ['Global Tours UK', 'Euro Holidays', 'Asia Travel Co', 'Marriott Hotels UAE', 'Desert Safari LLC', 'City Transport Co', 'Ahmed Hassan', 'Emma Wilson'];
 
 interface TransactionForm {
   type: string;
@@ -27,6 +26,7 @@ export default function BankCash() {
   const [form, setForm] = useState<TransactionForm>(emptyForm);
   const [paymentList, setPaymentList] = useState<Payment[]>([]);
   const [accountList, setAccountList] = useState<BankAccount[]>([]);
+  const [parties, setParties] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,10 +34,17 @@ export default function BankCash() {
     let cancelled = false;
     (async () => {
       try {
-        const [accounts, pmts] = await Promise.all([fetchBankCashAccounts(), fetchPayments()]);
+        const [accounts, pmts, agents, suppliers] = await Promise.all([
+          fetchBankCashAccounts(), fetchPayments(), fetchAgents(), fetchSuppliers(),
+        ]);
         if (!cancelled) {
           if (accounts) setAccountList(accounts);
           if (pmts) setPaymentList(pmts);
+          const names = [
+            ...(agents ?? []).map(a => a.name),
+            ...(suppliers ?? []).map(s => s.name),
+          ].filter(Boolean);
+          setParties([...new Set(names)]);
         }
       } catch (e: any) {
         if (!cancelled) setError(e.message);

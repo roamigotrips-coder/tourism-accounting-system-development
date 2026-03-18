@@ -1,157 +1,43 @@
-import { useState } from 'react';
-import { 
+import { useState, useEffect } from 'react';
+import {
   ShoppingBag, Plus, Search, Filter, Download, Eye, Edit, Trash2,
   CheckCircle, Clock, XCircle, FileText, Building2, Calendar, DollarSign
 } from 'lucide-react';
-
-type PurchaseOrder = {
-  id: string;
-  poNumber: string;
-  supplier: string;
-  supplierType: string;
-  date: string;
-  dueDate: string;
-  items: PurchaseItem[];
-  subtotal: number;
-  vat: number;
-  total: number;
-  currency: string;
-  status: 'draft' | 'pending' | 'approved' | 'received' | 'cancelled';
-  paymentStatus: 'unpaid' | 'partial' | 'paid';
-  linkedBooking?: string;
-  notes?: string;
-};
-
-type PurchaseItem = {
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-};
-
-const purchaseOrders: PurchaseOrder[] = [
-  {
-    id: 'PO001',
-    poNumber: 'PO-2024-001',
-    supplier: 'Desert Safari Adventures',
-    supplierType: 'Activity Provider',
-    date: '2024-01-15',
-    dueDate: '2024-01-30',
-    items: [
-      { description: 'Desert Safari Package x 4 pax', quantity: 4, unitPrice: 150, total: 600 },
-      { description: 'BBQ Dinner Upgrade', quantity: 4, unitPrice: 50, total: 200 },
-    ],
-    subtotal: 800,
-    vat: 40,
-    total: 840,
-    currency: 'AED',
-    status: 'received',
-    paymentStatus: 'paid',
-    linkedBooking: 'BK-2024-0156',
-  },
-  {
-    id: 'PO002',
-    poNumber: 'PO-2024-002',
-    supplier: 'Luxury Hotels Group',
-    supplierType: 'Hotel',
-    date: '2024-01-16',
-    dueDate: '2024-02-15',
-    items: [
-      { description: 'Deluxe Room - 3 Nights', quantity: 2, unitPrice: 800, total: 1600 },
-      { description: 'Airport Transfer', quantity: 2, unitPrice: 150, total: 300 },
-    ],
-    subtotal: 1900,
-    vat: 95,
-    total: 1995,
-    currency: 'AED',
-    status: 'approved',
-    paymentStatus: 'unpaid',
-    linkedBooking: 'BK-2024-0158',
-  },
-  {
-    id: 'PO003',
-    poNumber: 'PO-2024-003',
-    supplier: 'Gulf Transport Co.',
-    supplierType: 'Transport',
-    date: '2024-01-17',
-    dueDate: '2024-02-01',
-    items: [
-      { description: 'Luxury Van Rental - 5 Days', quantity: 1, unitPrice: 2500, total: 2500 },
-      { description: 'Driver Services', quantity: 5, unitPrice: 200, total: 1000 },
-    ],
-    subtotal: 3500,
-    vat: 175,
-    total: 3675,
-    currency: 'AED',
-    status: 'pending',
-    paymentStatus: 'unpaid',
-    linkedBooking: 'BK-2024-0160',
-  },
-  {
-    id: 'PO004',
-    poNumber: 'PO-2024-004',
-    supplier: 'Emirates Tickets LLC',
-    supplierType: 'Tickets',
-    date: '2024-01-18',
-    dueDate: '2024-01-25',
-    items: [
-      { description: 'Burj Khalifa - At The Top', quantity: 6, unitPrice: 149, total: 894 },
-      { description: 'Dubai Aquarium Tickets', quantity: 6, unitPrice: 120, total: 720 },
-    ],
-    subtotal: 1614,
-    vat: 80.7,
-    total: 1694.7,
-    currency: 'AED',
-    status: 'received',
-    paymentStatus: 'partial',
-    linkedBooking: 'BK-2024-0159',
-  },
-  {
-    id: 'PO005',
-    poNumber: 'PO-2024-005',
-    supplier: 'Marina Yacht Services',
-    supplierType: 'Activity Provider',
-    date: '2024-01-19',
-    dueDate: '2024-02-19',
-    items: [
-      { description: 'Luxury Yacht Charter - 4 Hours', quantity: 1, unitPrice: 5000, total: 5000 },
-      { description: 'Catering Package Premium', quantity: 1, unitPrice: 1500, total: 1500 },
-    ],
-    subtotal: 6500,
-    vat: 325,
-    total: 6825,
-    currency: 'AED',
-    status: 'draft',
-    paymentStatus: 'unpaid',
-  },
-  {
-    id: 'PO006',
-    poNumber: 'PO-2024-006',
-    supplier: 'Visa Express Services',
-    supplierType: 'Visa Services',
-    date: '2024-01-20',
-    dueDate: '2024-01-27',
-    items: [
-      { description: 'UAE Tourist Visa - 30 Days', quantity: 4, unitPrice: 350, total: 1400 },
-      { description: 'Express Processing', quantity: 4, unitPrice: 100, total: 400 },
-    ],
-    subtotal: 1800,
-    vat: 90,
-    total: 1890,
-    currency: 'AED',
-    status: 'approved',
-    paymentStatus: 'paid',
-    linkedBooking: 'BK-2024-0161',
-  },
-];
+import { fetchPurchaseOrders, type PurchaseOrder } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 const supplierTypes = ['All', 'Hotel', 'Transport', 'Activity Provider', 'Tickets', 'Visa Services', 'Tour Guide'];
 
 export default function Purchases() {
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [supplierTypeFilter, setSupplierTypeFilter] = useState<string>('All');
   const [showNewPO, setShowNewPO] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchPurchaseOrders();
+        if (!cancelled) {
+          setPurchaseOrders(data ?? []);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err.message ?? 'Failed to load purchase orders');
+          setLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorBanner message={error} />;
 
   const filteredOrders = purchaseOrders.filter(po => {
     const matchesSearch = po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||

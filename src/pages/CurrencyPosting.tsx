@@ -1,58 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowRight, DollarSign, FileText, BookOpen, Check, AlertTriangle, Play, Eye, TrendingUp, Lock } from 'lucide-react';
-
-interface PostingDocument {
-  id: string;
-  type: 'invoice' | 'expense' | 'payment' | 'journal';
-  reference: string;
-  party: string;
-  foreignCurrency: string;
-  foreignAmount: number;
-  exchangeRate: number;
-  baseAmount: number;
-  status: 'pending' | 'posted' | 'failed';
-  postingDate: string;
-  lines: { account: string; accountCode: string; debitBase: number; creditBase: number }[];
-}
-
-const SAMPLE_DOCS: PostingDocument[] = [
-  {
-    id: 'POST-001', type: 'invoice', reference: 'INV-2024-0088', party: 'ABC Travel LLC',
-    foreignCurrency: 'USD', foreignAmount: 1000, exchangeRate: 3.6700, baseAmount: 3670,
-    status: 'posted', postingDate: '2024-01-15',
-    lines: [
-      { account: 'Accounts Receivable', accountCode: '1200', debitBase: 3670, creditBase: 0 },
-      { account: 'Sales Revenue', accountCode: '4000', debitBase: 0, creditBase: 3670 },
-    ]
-  },
-  {
-    id: 'POST-002', type: 'expense', reference: 'EXP-2024-0045', party: 'Hotel Supplier',
-    foreignCurrency: 'EUR', foreignAmount: 2500, exchangeRate: 3.9950, baseAmount: 9987.50,
-    status: 'posted', postingDate: '2024-01-16',
-    lines: [
-      { account: 'Hotel Expense', accountCode: '5300', debitBase: 9987.50, creditBase: 0 },
-      { account: 'Accounts Payable', accountCode: '2000', debitBase: 0, creditBase: 9987.50 },
-    ]
-  },
-  {
-    id: 'POST-003', type: 'payment', reference: 'PMT-2024-0032', party: 'XYZ Tours',
-    foreignCurrency: 'GBP', foreignAmount: 5000, exchangeRate: 4.6400, baseAmount: 23200,
-    status: 'pending', postingDate: '2024-01-18',
-    lines: [
-      { account: 'Bank Account', accountCode: '1100', debitBase: 23200, creditBase: 0 },
-      { account: 'Accounts Receivable', accountCode: '1200', debitBase: 0, creditBase: 23200 },
-    ]
-  },
-  {
-    id: 'POST-004', type: 'invoice', reference: 'INV-2024-0092', party: 'Gulf Adventures',
-    foreignCurrency: 'SAR', foreignAmount: 15000, exchangeRate: 0.9793, baseAmount: 14689.50,
-    status: 'pending', postingDate: '2024-01-19',
-    lines: [
-      { account: 'Accounts Receivable', accountCode: '1200', debitBase: 14689.50, creditBase: 0 },
-      { account: 'Sales Revenue', accountCode: '4000', debitBase: 0, creditBase: 14689.50 },
-    ]
-  },
-];
+import { fetchCurrencyPostingDocs, upsertCurrencyPostingDoc, type CurrencyPostingDoc } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 const PIPELINE_STEPS = [
   { step: 1, label: 'Document', desc: 'Foreign currency amount', icon: FileText, color: 'bg-blue-500' },
@@ -62,16 +11,33 @@ const PIPELINE_STEPS = [
 ];
 
 export default function CurrencyPosting() {
-  const [documents, setDocuments] = useState<PostingDocument[]>(SAMPLE_DOCS);
+  const [documents, setDocuments] = useState<CurrencyPostingDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'pipeline' | 'documents' | 'rates' | 'gl'>('pipeline');
-  const [selectedDoc, setSelectedDoc] = useState<PostingDocument | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<CurrencyPostingDoc | null>(null);
   const [runningPipeline, setRunningPipeline] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchCurrencyPostingDocs();
+        if (!cancelled && data) setDocuments(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const posted = documents.filter(d => d.status === 'posted');
   const pending = documents.filter(d => d.status === 'pending');
 
-  const runPipeline = (doc: PostingDocument) => {
+  const runPipeline = (doc: CurrencyPostingDoc) => {
     setRunningPipeline(true);
     setPipelineStep(1);
     const advance = (step: number) => {
@@ -81,7 +47,9 @@ export default function CurrencyPosting() {
           advance(step + 1);
         } else {
           setTimeout(() => {
-            setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'posted' as const } : d));
+            const updatedDoc = { ...doc, status: 'posted' as const };
+            setDocuments(prev => prev.map(d => d.id === doc.id ? updatedDoc : d));
+            upsertCurrencyPostingDoc(updatedDoc).catch(() => {});
             setRunningPipeline(false);
             setPipelineStep(0);
           }, 800);
@@ -104,6 +72,9 @@ export default function CurrencyPosting() {
     { id: 'rates' as const, label: 'Locked Rates', icon: Lock },
     { id: 'gl' as const, label: 'GL Impact', icon: BookOpen },
   ];
+
+  if (loading) return <LoadingSpinner message="Loading currency posting documents..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="space-y-6">

@@ -5,6 +5,16 @@
 -- ============================================================
 
 -- ── Drop existing tables (order matters for foreign keys) ────
+DROP TABLE IF EXISTS supplier_pending_invoices CASCADE;
+DROP TABLE IF EXISTS supplier_automation_rules CASCADE;
+DROP TABLE IF EXISTS currency_posting_docs CASCADE;
+DROP TABLE IF EXISTS fixed_assets CASCADE;
+DROP TABLE IF EXISTS inventory_items CASCADE;
+DROP TABLE IF EXISTS recurring_invoices CASCADE;
+DROP TABLE IF EXISTS recurring_profiles CASCADE;
+DROP TABLE IF EXISTS recurring_billing CASCADE;
+DROP TABLE IF EXISTS purchase_order_items CASCADE;
+DROP TABLE IF EXISTS purchase_orders CASCADE;
 DROP TABLE IF EXISTS retainers CASCADE;
 DROP TABLE IF EXISTS time_entries CASCADE;
 DROP TABLE IF EXISTS projects CASCADE;
@@ -629,6 +639,174 @@ CREATE TABLE retainers (
 );
 
 -- ══════════════════════════════════════════════════════════════
+-- 12. PURCHASE ORDERS
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE purchase_orders (
+  id TEXT PRIMARY KEY,
+  po_number TEXT NOT NULL DEFAULT '',
+  supplier TEXT NOT NULL DEFAULT '',
+  supplier_type TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL DEFAULT '',
+  due_date TEXT NOT NULL DEFAULT '',
+  subtotal NUMERIC NOT NULL DEFAULT 0,
+  vat NUMERIC NOT NULL DEFAULT 0,
+  total NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'AED',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending','approved','received','cancelled')),
+  payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','partial','paid')),
+  linked_booking TEXT,
+  notes TEXT
+);
+
+CREATE TABLE purchase_order_items (
+  id TEXT PRIMARY KEY,
+  purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  description TEXT NOT NULL DEFAULT '',
+  quantity NUMERIC NOT NULL DEFAULT 0,
+  unit_price NUMERIC NOT NULL DEFAULT 0,
+  total NUMERIC NOT NULL DEFAULT 0
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 13. RECURRING BILLING
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE recurring_billing (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  frequency TEXT NOT NULL DEFAULT 'Monthly',
+  amount NUMERIC NOT NULL DEFAULT 0,
+  debit_account_id TEXT NOT NULL DEFAULT '',
+  credit_account_id TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  next_run_date TEXT,
+  start_date TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Paused','Completed')),
+  last_run_date TEXT,
+  run_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE recurring_profiles (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL DEFAULT '',
+  customer_name TEXT NOT NULL DEFAULT '',
+  plan_name TEXT NOT NULL DEFAULT '',
+  frequency TEXT NOT NULL DEFAULT 'monthly' CHECK (frequency IN ('daily','weekly','monthly','quarterly','yearly')),
+  start_date TEXT NOT NULL DEFAULT '',
+  end_date TEXT,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'AED',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','cancelled','expired')),
+  billing_anchor_day INTEGER NOT NULL DEFAULT 1,
+  next_billing_date TEXT,
+  last_billed_date TEXT,
+  total_billed NUMERIC NOT NULL DEFAULT 0,
+  invoice_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE recurring_invoices (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  customer_name TEXT NOT NULL DEFAULT '',
+  plan_name TEXT NOT NULL DEFAULT '',
+  invoice_id TEXT,
+  generation_date TEXT NOT NULL DEFAULT '',
+  period_start TEXT NOT NULL DEFAULT '',
+  period_end TEXT NOT NULL DEFAULT '',
+  amount NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'AED',
+  is_prorated BOOLEAN NOT NULL DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'generated' CHECK (status IN ('generated','sent','paid','overdue','cancelled'))
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 14. INVENTORY
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE inventory_items (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL DEFAULT 'pcs',
+  quantity NUMERIC NOT NULL DEFAULT 0,
+  min_stock_level NUMERIC NOT NULL DEFAULT 0,
+  max_stock_level NUMERIC NOT NULL DEFAULT 0,
+  unit_cost NUMERIC NOT NULL DEFAULT 0,
+  location TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'In Stock' CHECK (status IN ('In Stock','Low Stock','Out of Stock')),
+  supplier TEXT NOT NULL DEFAULT '',
+  last_reorder_date TEXT
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 15. FIXED ASSETS
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE fixed_assets (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  purchase_date TEXT NOT NULL DEFAULT '',
+  purchase_price NUMERIC NOT NULL DEFAULT 0,
+  salvage_value NUMERIC NOT NULL DEFAULT 0,
+  useful_life_years INTEGER NOT NULL DEFAULT 5,
+  depreciation_method TEXT NOT NULL DEFAULT 'Straight Line',
+  accumulated_depreciation NUMERIC NOT NULL DEFAULT 0,
+  current_value NUMERIC NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Disposing','Disposed')),
+  assigned_to TEXT,
+  warranty_expiry TEXT,
+  maintenance_date TEXT
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 16. CURRENCY POSTING DOCUMENTS
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE currency_posting_docs (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'invoice' CHECK (type IN ('invoice','expense','payment','journal')),
+  reference TEXT NOT NULL DEFAULT '',
+  party TEXT NOT NULL DEFAULT '',
+  foreign_currency TEXT NOT NULL DEFAULT '',
+  foreign_amount NUMERIC NOT NULL DEFAULT 0,
+  exchange_rate NUMERIC NOT NULL DEFAULT 1,
+  base_amount NUMERIC NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','posted','failed')),
+  posting_date TEXT NOT NULL DEFAULT '',
+  lines JSONB NOT NULL DEFAULT '[]'
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 17. SUPPLIER AUTOMATION
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE supplier_automation_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  supplier TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Paused')),
+  last_run TEXT,
+  matches INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE supplier_pending_invoices (
+  id TEXT PRIMARY KEY,
+  supplier TEXT NOT NULL DEFAULT '',
+  amount NUMERIC NOT NULL DEFAULT 0,
+  bookings INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Pending Review',
+  upload_date TEXT NOT NULL DEFAULT ''
+);
+
+-- ══════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY (public read/write — add auth later)
 -- ══════════════════════════════════════════════════════════════
 
@@ -716,6 +894,28 @@ CREATE POLICY "allow_all" ON projects              FOR ALL USING (true) WITH CHE
 CREATE POLICY "allow_all" ON time_entries          FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all" ON retainers             FOR ALL USING (true) WITH CHECK (true);
 
+ALTER TABLE purchase_orders              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_order_items         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recurring_billing            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recurring_profiles           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recurring_invoices           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_items              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fixed_assets                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE currency_posting_docs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_automation_rules    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_pending_invoices    ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all" ON purchase_orders           FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON purchase_order_items      FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON recurring_billing         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON recurring_profiles        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON recurring_invoices        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON inventory_items           FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON fixed_assets              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON currency_posting_docs     FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON supplier_automation_rules FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON supplier_pending_invoices FOR ALL USING (true) WITH CHECK (true);
+
 -- ══════════════════════════════════════════════════════════════
 -- INDEXES
 -- ══════════════════════════════════════════════════════════════
@@ -741,3 +941,14 @@ CREATE INDEX idx_leads_status ON leads(status);
 CREATE INDEX idx_employees_status ON employees(status);
 CREATE INDEX idx_time_entries_project ON time_entries(project_id);
 CREATE INDEX idx_retainers_status ON retainers(status);
+CREATE INDEX idx_po_status ON purchase_orders(status);
+CREATE INDEX idx_poi_order ON purchase_order_items(purchase_order_id);
+CREATE INDEX idx_rb_status ON recurring_billing(status);
+CREATE INDEX idx_rp_status ON recurring_profiles(status);
+CREATE INDEX idx_ri_status ON recurring_invoices(status);
+CREATE INDEX idx_ri_profile ON recurring_invoices(profile_id);
+CREATE INDEX idx_inv_items_status ON inventory_items(status);
+CREATE INDEX idx_fa_status ON fixed_assets(status);
+CREATE INDEX idx_cpd_status ON currency_posting_docs(status);
+CREATE INDEX idx_sar_status ON supplier_automation_rules(status);
+CREATE INDEX idx_spi_status ON supplier_pending_invoices(status);

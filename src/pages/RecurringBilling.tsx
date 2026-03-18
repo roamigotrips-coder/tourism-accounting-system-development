@@ -1,53 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Calendar, Clock, PauseCircle, PlayCircle, Info } from 'lucide-react';
-
-// Mock data for the table (existing entries)
-export function mockRecurringBilling() {
-  return [
-    {
-      id: 'RB001',
-      name: 'Monthly Office Rent',
-      frequency: 'Monthly',
-      amount: 8000,
-      debitAccountId: '5000',
-      creditAccountId: '1100',
-      description: 'Office rent payment',
-      nextRunDate: '2024-02-01',
-      startDate: '2024-01-01',
-      status: 'Active',
-      lastRunDate: '2024-01-01',
-      runCount: 1,
-    },
-    {
-      id: 'RB002',
-      name: 'Internet Service',
-      frequency: 'Monthly',
-      amount: 500,
-      debitAccountId: '5000',
-      creditAccountId: '1000',
-      description: 'Monthly internet bill',
-      nextRunDate: '2024-02-15',
-      startDate: '2024-01-15',
-      status: 'Active',
-      lastRunDate: null,
-      runCount: 0,
-    },
-    {
-      id: 'RB003',
-      name: 'Software Subscription',
-      frequency: 'Yearly',
-      amount: 1200,
-      debitAccountId: '5100',
-      creditAccountId: '1000',
-      description: 'Accounting software license',
-      nextRunDate: '2025-01-01',
-      startDate: '2024-01-01',
-      status: 'Paused',
-      lastRunDate: '2024-01-01',
-      runCount: 1,
-    },
-  ];
-}
+import { fetchRecurringBilling, type RecurringBillingEntry } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 export default function RecurringBilling() {
   // List filters and state
@@ -55,7 +9,24 @@ export default function RecurringBilling() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const allBilling = mockRecurringBilling();
+  const [allBilling, setAllBilling] = useState<RecurringBillingEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchRecurringBilling();
+        if (!cancelled && data) setAllBilling(data);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filteredBilling = useMemo(() => {
     return allBilling.filter((billing) => {
@@ -182,6 +153,9 @@ export default function RecurringBilling() {
   }, [startDate, endDate, proration, baseAmount, frequency, intervalEvery]);
 
   const canCreate = entryName.trim().length > 0 && baseAmount > 0 && startDate !== '';
+
+  if (loading) return <LoadingSpinner message="Loading recurring billing..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="p-6 space-y-6">

@@ -1,30 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Upload, Link2, Bell, Check, AlertTriangle, RefreshCw, Settings } from 'lucide-react';
-import { fetchSuppliers } from '../lib/supabaseSync';
+import { fetchSuppliers, fetchSupplierAutomationRules, fetchSupplierPendingInvoices, type SupplierAutomationRule, type SupplierPendingInvoice } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import type { Supplier } from '../data/mockData';
 
-const automationRules = [
-  { id: 'AR-001', name: 'Hotel Cost Allocation', supplier: 'Marriott Hotels UAE', status: 'Active', lastRun: '2024-03-18 09:30', matches: 12 },
-  { id: 'AR-002', name: 'Desert Safari Tickets', supplier: 'Desert Safari LLC', status: 'Active', lastRun: '2024-03-18 08:15', matches: 8 },
-  { id: 'AR-003', name: 'Transport Auto-Link', supplier: 'City Transport Co', status: 'Active', lastRun: '2024-03-17 16:45', matches: 15 },
-  { id: 'AR-004', name: 'Activity Tickets Match', supplier: 'Dubai Attractions', status: 'Paused', lastRun: '2024-03-15 11:20', matches: 5 },
-];
-
-const pendingInvoices = [
-  { id: 'SI-001', supplier: 'Marriott Hotels UAE', amount: 45000, bookings: 8, status: 'Pending Review', uploadDate: '2024-03-17' },
-  { id: 'SI-002', supplier: 'Desert Safari LLC', amount: 12500, bookings: 25, status: 'Auto-Matched', uploadDate: '2024-03-16' },
-  { id: 'SI-003', supplier: 'Dubai Attractions', amount: 8200, bookings: 15, status: 'Partial Match', uploadDate: '2024-03-15' },
-];
-
-const paymentReminders = [
-  { supplier: 'Marriott Hotels UAE', amount: 23000, dueDate: '2024-03-20', daysToDue: 2, priority: 'High' },
-  { supplier: 'City Transport Co', amount: 15000, dueDate: '2024-03-25', daysToDue: 7, priority: 'Medium' },
-  { supplier: 'Premium Stays', amount: 11000, dueDate: '2024-03-30', daysToDue: 12, priority: 'Low' },
-];
-
 export default function SupplierAuto() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [automationRules, setAutomationRules] = useState<SupplierAutomationRule[]>([]);
+  const [pendingInvoices, setPendingInvoices] = useState<SupplierPendingInvoice[]>([]);
+  const paymentReminders: { supplier: string; amount: number; dueDate: string; daysToDue: number; priority: string }[] = [];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,8 +16,16 @@ export default function SupplierAuto() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await fetchSuppliers();
-        if (!cancelled && data) setSuppliers(data);
+        const [data, rules, pending] = await Promise.all([
+          fetchSuppliers(),
+          fetchSupplierAutomationRules(),
+          fetchSupplierPendingInvoices(),
+        ]);
+        if (!cancelled) {
+          if (data) setSuppliers(data);
+          if (rules) setAutomationRules(rules);
+          if (pending) setPendingInvoices(pending);
+        }
       } catch (e: any) {
         if (!cancelled) setError(e.message);
       } finally {

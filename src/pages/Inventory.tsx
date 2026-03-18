@@ -1,16 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Download, AlertTriangle, Package } from 'lucide-react';
-
-export function mockInventoryData() {
-  return [
-    { id: 'INV001', code: 'ITM001', name: 'Tour Brochures', category: 'Marketing', description: 'Company tourism brochures', unit: 'pcs', quantity: 5000, minStockLevel: 1000, maxStockLevel: 10000, unitCost: 0.5, location: 'Office - Shelf A', status: 'In Stock', supplier: 'Print Co.', lastReorderDate: '2024-01-15' },
-    { id: 'INV002', code: 'ITM002', name: 'Vehicle Fuel Cards', category: 'Transport', description: 'Prepaid fuel cards', unit: 'cards', quantity: 50, minStockLevel: 10, maxStockLevel: 100, unitCost: 200, location: 'Office Cabinet', status: 'In Stock', supplier: 'Fuel Station', lastReorderDate: '2024-01-10' },
-    { id: 'INV003', code: 'ITM003', name: 'Welcome Kits', category: 'Marketing', description: 'Tourist welcome kit with souvenirs', unit: 'kits', quantity: 80, minStockLevel: 50, maxStockLevel: 200, unitCost: 25, location: 'Office - Storage', status: 'Low Stock', supplier: 'Gift Co.', lastReorderDate: '2024-01-05' },
-    { id: 'INV004', code: 'ITM004', name: 'Tour Maps', category: 'Marketing', description: 'Dubai city tour maps', unit: 'maps', quantity: 2000, minStockLevel: 500, maxStockLevel: 5000, unitCost: 0.8, location: 'Office - Shelf B', status: 'In Stock', supplier: 'Print Co.', lastReorderDate: '2024-01-12' },
-    { id: 'INV005', code: 'ITM005', name: 'Water Bottles', category: 'Food & Beverage', description: 'Branded water bottles for tours', unit: 'bottles', quantity: 150, minStockLevel: 200, maxStockLevel: 500, unitCost: 1.5, location: 'Office - Kitchen', status: 'Low Stock', supplier: 'Water Co.', lastReorderDate: '2024-01-18' },
-    { id: 'INV006', code: 'ITM006', name: 'First Aid Kits', category: 'Safety', description: 'Travel first aid kits', unit: 'kits', quantity: 5, minStockLevel: 10, maxStockLevel: 20, unitCost: 45, location: 'Vehicle Storage', status: 'Out of Stock', supplier: 'Medical Co.' },
-  ];
-}
+import { fetchInventoryItems, type InventoryItem } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,7 +10,27 @@ export default function Inventory() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
 
-  const allItems = mockInventoryData();
+  const [allItems, setAllItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchInventoryItems();
+        if (!cancelled) {
+          setAllItems(data ?? []);
+          setError(null);
+        }
+      } catch (err: any) {
+        if (!cancelled) setError(err.message ?? 'Failed to load inventory items');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filteredItems = useMemo(() => {
     return allItems.map(item => ({
@@ -46,6 +57,9 @@ export default function Inventory() {
   }, [allItems]);
 
   const categories = [...new Set(allItems.map(i => i.category))];
+
+  if (loading) return <LoadingSpinner message="Loading inventory items..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="p-6 space-y-6">

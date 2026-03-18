@@ -1,16 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Download, Settings, MapPin, Calendar, TrendingDown, Shield } from 'lucide-react';
-
-export function mockFixedAssets() {
-  return [
-    { id: 'FA001', code: 'VEH-001', name: 'Toyota Hiace Van', category: 'Vehicles', description: '15-seater van for tours', location: 'Parking Lot A', purchaseDate: '2022-03-15', purchasePrice: 85000, salvageValue: 5000, usefulLifeYears: 5, depreciationMethod: 'Straight Line', accumulatedDepreciation: 48000, currentValue: 37000, status: 'Active', assignedTo: 'Driver-01', warrantyExpiry: '2024-03-15', maintenanceDate: '2024-02-01' },
-    { id: 'FA002', code: 'VEH-002', name: 'Kia Carnival Van', category: 'Vehicles', description: '7-seater luxury van', location: 'Parking Lot A', purchaseDate: '2023-01-10', purchasePrice: 95000, salvageValue: 10000, usefulLifeYears: 5, depreciationMethod: 'Straight Line', accumulatedDepreciation: 23750, currentValue: 71250, status: 'Active', assignedTo: 'Driver-02', warrantyExpiry: '2025-01-10', maintenanceDate: '2024-01-25' },
-    { id: 'FA003', code: 'COM-001', name: 'Server - Main', category: 'IT Equipment', description: 'Main office server', location: 'Server Room', purchaseDate: '2021-06-01', purchasePrice: 12000, salvageValue: 1000, usefulLifeYears: 3, depreciationMethod: 'Straight Line', accumulatedDepreciation: 0, currentValue: 12000, status: 'Active', warrantyExpiry: '2023-06-01', maintenanceDate: '2024-01-20' },
-    { id: 'FA004', code: 'VEH-003', name: ' Hyundai Accent', category: 'Vehicles', description: 'Sedan for airport transfers', location: 'Parking Lot B', purchaseDate: '2020-11-20', purchasePrice: 45000, salvageValue: 2000, usefulLifeYears: 5, depreciationMethod: 'Straight Line', accumulatedDepreciation: 39600, currentValue: 5400, status: 'Active', assignedTo: 'Driver-03' },
-    { id: 'FA005', code: 'OFF-001', name: 'Office Furniture Set', category: 'Furniture', description: 'Desks and chairs', location: 'Office Floor 1', purchaseDate: '2022-01-15', purchasePrice: 15000, salvageValue: 0, usefulLifeYears: 7, depreciationMethod: 'Straight Line', accumulatedDepreciation: 4285, currentValue: 10715, status: 'Active' },
-    { id: 'FA006', code: 'VEH-004', name: 'Nissan Patrol', category: 'Vehicles', description: 'SUV for desert safaris', location: 'Parking Lot A', purchaseDate: '2024-01-05', purchasePrice: 150000, salvageValue: 15000, usefulLifeYears: 5, depreciationMethod: 'Straight Line', accumulatedDepreciation: 675, currentValue: 149325, status: 'Disposing' },
-  ];
-}
+import { fetchFixedAssets as fetchFixedAssetsDb, type FixedAsset } from '../lib/supabaseSync';
+import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 
 export default function FixedAssets() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,7 +10,27 @@ export default function FixedAssets() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
 
-  const allAssets = mockFixedAssets();
+  const [allAssets, setAllAssets] = useState<FixedAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchFixedAssetsDb();
+        if (!cancelled) {
+          setAllAssets(data ?? []);
+          setError(null);
+        }
+      } catch (err: any) {
+        if (!cancelled) setError(err.message ?? 'Failed to load fixed assets');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const filteredAssets = useMemo(() => {
     return allAssets.filter(asset => {
@@ -44,6 +55,9 @@ export default function FixedAssets() {
   }, [allAssets]);
 
   const categories = [...new Set(allAssets.map(a => a.category))];
+
+  if (loading) return <LoadingSpinner message="Loading fixed assets..." />;
+  if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="p-6 space-y-6">
