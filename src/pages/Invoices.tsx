@@ -741,12 +741,27 @@ export default function Invoices() {
           </h1>
           <p className="text-slate-500 mt-1">Finance approval queue, invoices & payment tracking</p>
         </div>
-        <button
-          onClick={() => { setForm(emptyForm); setShowModal(true); }}
-          className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 text-sm font-medium"
-        >
-          <Plus size={16} /> Create Invoice
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setForm(emptyForm); setShowModal(true); }}
+            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 text-sm font-medium"
+          >
+            <Plus size={16} /> Create Invoice
+          </button>
+          <div className="relative group">
+            <button className="flex items-center gap-1 px-3 py-2.5 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 text-sm font-medium">
+              <FileText size={14} /> From... <ChevronDown size={12} />
+            </button>
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 hidden group-hover:block">
+              <button className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2">
+                <FileText size={14} /> From Quote
+              </button>
+              <button className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2">
+                <FileText size={14} /> From Sales Order
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Stats */}

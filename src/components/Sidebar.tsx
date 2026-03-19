@@ -4,7 +4,9 @@ import {
   Building2, FileText, TrendingUp, CreditCard, Briefcase,
   BarChart3, Settings, DollarSign, Globe, ChevronLeft, ChevronRight,
   ShoppingBag, GitCompare, ChevronDown, ChevronUp, Book, FileSearch, Scale,
-  RotateCcw, History, Box, Wrench, FileCheck, LayoutTemplate, Sliders, ShieldCheck, Cloud, Database, Lock
+  RotateCcw, History, Box, Wrench, FileCheck, LayoutTemplate, Sliders, ShieldCheck, Cloud, Database, Lock,
+  FileSignature, ClipboardList, CreditCard as CreditCardIcon, ReceiptText,
+  Bell, UserCircle, Store, Wallet, Tag, Mail, CalendarCheck, Banknote, TruckIcon, Search
 } from 'lucide-react';
 
 export type Page =
@@ -17,7 +19,10 @@ export type Page =
    | 'projects' | 'retainers' | 'automation' | 'importWizard' | 'financeApprovalQueue' | 'bankFeeds'
    | 'matchingRules' | 'databaseSchema' | 'currencyRevaluation' | 'currencyTables' | 'currencyPosting'
    | 'recurringProfiles' | 'recurringInvoices' | 'approvalEngine' | 'financialReportBuilder'
-   | 'transactionLocking';
+   | 'transactionLocking'
+   | 'quotes' | 'salesOrders' | 'creditNotes' | 'bills'
+   | 'notifications' | 'customerPortal' | 'vendorPortal' | 'budgeting' | 'priceLists'
+   | 'emailTemplates' | 'revenueRecognition' | 'payroll' | 'deliveryChallans' | 'globalSearch';
 
 type MenuItem = { id: Page; label: string; icon: React.ElementType };
 type Section = { label: string; accent: string; items: MenuItem[] };
@@ -34,7 +39,11 @@ const sections: Section[] = [
     label: 'REVENUE',
     accent: 'bg-emerald-400',
     items: [
-      { id: 'sales', label: 'Sales & Booking', icon: ShoppingCart },
+      { id: 'sales',        label: 'Sales & Booking',  icon: ShoppingCart },
+      { id: 'quotes',       label: 'Quotes / Estimates', icon: FileSignature },
+      { id: 'salesOrders',  label: 'Sales Orders',     icon: ClipboardList },
+      { id: 'creditNotes',  label: 'Credit / Debit Notes', icon: CreditCardIcon },
+      { id: 'deliveryChallans', label: 'Delivery Challans', icon: TruckIcon },
     ],
   },
   {
@@ -42,6 +51,7 @@ const sections: Section[] = [
     accent: 'bg-orange-400',
     items: [
       { id: 'purchases',  label: 'Purchases',          icon: ShoppingBag },
+      { id: 'bills',      label: 'Vendor Bills',       icon: ReceiptText },
       { id: 'expenses',   label: 'Expense Management', icon: DollarSign  },
     ],
   },
@@ -67,8 +77,10 @@ const sections: Section[] = [
       { id: 'currencyRevaluation',  label: 'Currency Revaluation', icon: RotateCcw   },
       { id: 'currencyTables',       label: 'Currency Tables',      icon: Database    },
       { id: 'currencyPosting',      label: 'Currency Posting',     icon: DollarSign  },
-      { id: 'approvalEngine',       label: 'Approval Engine',      icon: ShieldCheck },
-      { id: 'transactionLocking',   label: 'Transaction Locking',  icon: Lock        },
+      { id: 'approvalEngine',          label: 'Approval Engine',       icon: ShieldCheck },
+      { id: 'transactionLocking',    label: 'Transaction Locking',  icon: Lock        },
+      { id: 'revenueRecognition',    label: 'Revenue Recognition',  icon: CalendarCheck },
+      { id: 'budgeting',            label: 'Budgeting',            icon: Wallet      },
     ],
   },
   {
@@ -82,6 +94,8 @@ const sections: Section[] = [
       { id: 'auditTrail',         label: 'Audit Trail',           icon: History   },
       { id: 'inventory',          label: 'Inventory',             icon: Box       },
       { id: 'fixedAssets',        label: 'Fixed Assets',          icon: Wrench    },
+      { id: 'payroll',            label: 'Payroll',              icon: Banknote  },
+      { id: 'priceLists',        label: 'Price Lists',          icon: Tag       },
     ],
   },
   {
@@ -103,7 +117,12 @@ const sections: Section[] = [
       { id: 'form-builder',   label: 'Form Builder',        icon: LayoutTemplate },
       { id: 'comparison',     label: 'Compare & Roadmap',   icon: TrendingUp     },
       { id: 'automation',     label: 'Automation',          icon: Sliders        },
-      { id: 'databaseSchema', label: 'Database Schema',     icon: Database       },
+      { id: 'customerPortal',  label: 'Customer Portal',      icon: UserCircle     },
+      { id: 'vendorPortal',    label: 'Vendor Portal',        icon: Store          },
+      { id: 'emailTemplates',  label: 'Email Templates',      icon: Mail           },
+      { id: 'notifications',   label: 'Notifications',        icon: Bell           },
+      { id: 'globalSearch',    label: 'Global Search',        icon: Search         },
+      { id: 'databaseSchema',  label: 'Database Schema',      icon: Database       },
     ],
   },
 ];

@@ -2295,3 +2295,338 @@ export async function upsertSupplierPendingInvoice(inv: SupplierPendingInvoice):
     bookings: inv.bookings, status: inv.status, upload_date: inv.uploadDate,
   }, { onConflict: 'id' });
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 14. SALES PIPELINE — Quotes, Sales Orders, Credit Notes, Bills
+// ══════════════════════════════════════════════════════════════════════════════
+
+/* ─── QUOTES ──────────────────────────────────────────────── */
+
+export interface Quote {
+  id: string;
+  quoteNumber: string;
+  customer: string;
+  agent?: string;
+  date: string;
+  expiryDate: string;
+  status: 'Draft' | 'Sent' | 'Accepted' | 'Declined' | 'Expired' | 'Converted';
+  subtotal: number;
+  discountPct: number;
+  vat: number;
+  total: number;
+  currency: string;
+  notes?: string;
+  terms?: string;
+  convertedToSo?: string;
+  convertedToInv?: string;
+  createdAt?: string;
+  items: QuoteItem[];
+}
+
+export interface QuoteItem {
+  id: string;
+  quoteId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPct: number;
+  taxRate: number;
+  total: number;
+}
+
+function dbToQuote(row: any, items: QuoteItem[]): Quote {
+  return {
+    id: row.id, quoteNumber: row.quote_number, customer: row.customer,
+    agent: row.agent ?? undefined, date: row.date, expiryDate: row.expiry_date,
+    status: row.status, subtotal: Number(row.subtotal), discountPct: Number(row.discount_pct),
+    vat: Number(row.vat), total: Number(row.total), currency: row.currency,
+    notes: row.notes ?? undefined, terms: row.terms ?? undefined,
+    convertedToSo: row.converted_to_so ?? undefined,
+    convertedToInv: row.converted_to_inv ?? undefined,
+    createdAt: row.created_at, items,
+  };
+}
+
+function dbToQuoteItem(row: any): QuoteItem {
+  return {
+    id: row.id, quoteId: row.quote_id, description: row.description,
+    quantity: Number(row.quantity), unitPrice: Number(row.unit_price),
+    discountPct: Number(row.discount_pct), taxRate: Number(row.tax_rate),
+    total: Number(row.total),
+  };
+}
+
+export async function fetchQuotes(): Promise<Quote[] | null> {
+  const { data: rows, error } = await supabase.from('quotes').select('*').order('created_at', { ascending: false });
+  if (error || !rows) return null;
+  const { data: itemRows } = await supabase.from('quote_items').select('*');
+  const allItems = (itemRows ?? []).map(dbToQuoteItem);
+  return rows.map(r => dbToQuote(r, allItems.filter(i => i.quoteId === r.id)));
+}
+
+export async function upsertQuote(q: Quote): Promise<void> {
+  await supabase.from('quotes').upsert({
+    id: q.id, quote_number: q.quoteNumber, customer: q.customer, agent: q.agent ?? null,
+    date: q.date, expiry_date: q.expiryDate, status: q.status, subtotal: q.subtotal,
+    discount_pct: q.discountPct, vat: q.vat, total: q.total, currency: q.currency,
+    notes: q.notes ?? null, terms: q.terms ?? null,
+    converted_to_so: q.convertedToSo ?? null, converted_to_inv: q.convertedToInv ?? null,
+  }, { onConflict: 'id' });
+  // Upsert items
+  if (q.items.length > 0) {
+    await supabase.from('quote_items').upsert(q.items.map(i => ({
+      id: i.id, quote_id: i.quoteId, description: i.description,
+      quantity: i.quantity, unit_price: i.unitPrice, discount_pct: i.discountPct,
+      tax_rate: i.taxRate, total: i.total,
+    })), { onConflict: 'id' });
+  }
+}
+
+export async function deleteQuote(id: string): Promise<void> {
+  await supabase.from('quotes').delete().eq('id', id);
+}
+
+/* ─── SALES ORDERS ────────────────────────────────────────── */
+
+export interface SalesOrder {
+  id: string;
+  soNumber: string;
+  customer: string;
+  agent?: string;
+  date: string;
+  deliveryDate?: string;
+  status: 'Draft' | 'Confirmed' | 'In Progress' | 'Delivered' | 'Invoiced' | 'Cancelled';
+  subtotal: number;
+  vat: number;
+  total: number;
+  currency: string;
+  quoteId?: string;
+  invoiceId?: string;
+  notes?: string;
+  createdAt?: string;
+  items: SalesOrderItem[];
+}
+
+export interface SalesOrderItem {
+  id: string;
+  salesOrderId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPct: number;
+  taxRate: number;
+  total: number;
+}
+
+function dbToSalesOrder(row: any, items: SalesOrderItem[]): SalesOrder {
+  return {
+    id: row.id, soNumber: row.so_number, customer: row.customer,
+    agent: row.agent ?? undefined, date: row.date,
+    deliveryDate: row.delivery_date ?? undefined, status: row.status,
+    subtotal: Number(row.subtotal), vat: Number(row.vat), total: Number(row.total),
+    currency: row.currency, quoteId: row.quote_id ?? undefined,
+    invoiceId: row.invoice_id ?? undefined, notes: row.notes ?? undefined,
+    createdAt: row.created_at, items,
+  };
+}
+
+function dbToSalesOrderItem(row: any): SalesOrderItem {
+  return {
+    id: row.id, salesOrderId: row.sales_order_id, description: row.description,
+    quantity: Number(row.quantity), unitPrice: Number(row.unit_price),
+    discountPct: Number(row.discount_pct), taxRate: Number(row.tax_rate),
+    total: Number(row.total),
+  };
+}
+
+export async function fetchSalesOrders(): Promise<SalesOrder[] | null> {
+  const { data: rows, error } = await supabase.from('sales_orders').select('*').order('created_at', { ascending: false });
+  if (error || !rows) return null;
+  const { data: itemRows } = await supabase.from('sales_order_items').select('*');
+  const allItems = (itemRows ?? []).map(dbToSalesOrderItem);
+  return rows.map(r => dbToSalesOrder(r, allItems.filter(i => i.salesOrderId === r.id)));
+}
+
+export async function upsertSalesOrder(so: SalesOrder): Promise<void> {
+  await supabase.from('sales_orders').upsert({
+    id: so.id, so_number: so.soNumber, customer: so.customer, agent: so.agent ?? null,
+    date: so.date, delivery_date: so.deliveryDate ?? null, status: so.status,
+    subtotal: so.subtotal, vat: so.vat, total: so.total, currency: so.currency,
+    quote_id: so.quoteId ?? null, invoice_id: so.invoiceId ?? null, notes: so.notes ?? null,
+  }, { onConflict: 'id' });
+  if (so.items.length > 0) {
+    await supabase.from('sales_order_items').upsert(so.items.map(i => ({
+      id: i.id, sales_order_id: i.salesOrderId, description: i.description,
+      quantity: i.quantity, unit_price: i.unitPrice, discount_pct: i.discountPct,
+      tax_rate: i.taxRate, total: i.total,
+    })), { onConflict: 'id' });
+  }
+}
+
+export async function deleteSalesOrder(id: string): Promise<void> {
+  await supabase.from('sales_orders').delete().eq('id', id);
+}
+
+/* ─── CREDIT NOTES ────────────────────────────────────────── */
+
+export interface CreditNote {
+  id: string;
+  cnNumber: string;
+  type: 'Credit' | 'Debit';
+  invoiceId?: string;
+  customer: string;
+  date: string;
+  reason: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  currency: string;
+  status: 'Draft' | 'Open' | 'Applied' | 'Void';
+  refundStatus: 'None' | 'Partial' | 'Full';
+  refundAmount: number;
+  createdAt?: string;
+  items: CreditNoteItem[];
+}
+
+export interface CreditNoteItem {
+  id: string;
+  creditNoteId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+function dbToCreditNote(row: any, items: CreditNoteItem[]): CreditNote {
+  return {
+    id: row.id, cnNumber: row.cn_number, type: row.type,
+    invoiceId: row.invoice_id ?? undefined, customer: row.customer,
+    date: row.date, reason: row.reason, subtotal: Number(row.subtotal),
+    vat: Number(row.vat), total: Number(row.total), currency: row.currency,
+    status: row.status, refundStatus: row.refund_status,
+    refundAmount: Number(row.refund_amount), createdAt: row.created_at, items,
+  };
+}
+
+function dbToCreditNoteItem(row: any): CreditNoteItem {
+  return {
+    id: row.id, creditNoteId: row.credit_note_id, description: row.description,
+    quantity: Number(row.quantity), unitPrice: Number(row.unit_price),
+    total: Number(row.total),
+  };
+}
+
+export async function fetchCreditNotes(): Promise<CreditNote[] | null> {
+  const { data: rows, error } = await supabase.from('credit_notes').select('*').order('created_at', { ascending: false });
+  if (error || !rows) return null;
+  const { data: itemRows } = await supabase.from('credit_note_items').select('*');
+  const allItems = (itemRows ?? []).map(dbToCreditNoteItem);
+  return rows.map(r => dbToCreditNote(r, allItems.filter(i => i.creditNoteId === r.id)));
+}
+
+export async function upsertCreditNote(cn: CreditNote): Promise<void> {
+  await supabase.from('credit_notes').upsert({
+    id: cn.id, cn_number: cn.cnNumber, type: cn.type,
+    invoice_id: cn.invoiceId ?? null, customer: cn.customer,
+    date: cn.date, reason: cn.reason, subtotal: cn.subtotal,
+    vat: cn.vat, total: cn.total, currency: cn.currency,
+    status: cn.status, refund_status: cn.refundStatus,
+    refund_amount: cn.refundAmount,
+  }, { onConflict: 'id' });
+  if (cn.items.length > 0) {
+    await supabase.from('credit_note_items').upsert(cn.items.map(i => ({
+      id: i.id, credit_note_id: i.creditNoteId, description: i.description,
+      quantity: i.quantity, unit_price: i.unitPrice, total: i.total,
+    })), { onConflict: 'id' });
+  }
+}
+
+export async function deleteCreditNote(id: string): Promise<void> {
+  await supabase.from('credit_notes').delete().eq('id', id);
+}
+
+/* ─── BILLS ───────────────────────────────────────────────── */
+
+export interface Bill {
+  id: string;
+  billNumber: string;
+  vendor: string;
+  vendorBillRef?: string;
+  date: string;
+  dueDate: string;
+  status: 'Draft' | 'Pending Approval' | 'Approved' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Void';
+  subtotal: number;
+  vat: number;
+  total: number;
+  currency: string;
+  amountPaid: number;
+  purchaseOrderId?: string;
+  recurring: boolean;
+  recurringProfileId?: string;
+  notes?: string;
+  createdAt?: string;
+  items: BillItem[];
+}
+
+export interface BillItem {
+  id: string;
+  billId: string;
+  description: string;
+  accountId?: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  total: number;
+}
+
+function dbToBill(row: any, items: BillItem[]): Bill {
+  return {
+    id: row.id, billNumber: row.bill_number, vendor: row.vendor,
+    vendorBillRef: row.vendor_bill_ref ?? undefined, date: row.date,
+    dueDate: row.due_date, status: row.status, subtotal: Number(row.subtotal),
+    vat: Number(row.vat), total: Number(row.total), currency: row.currency,
+    amountPaid: Number(row.amount_paid), purchaseOrderId: row.purchase_order_id ?? undefined,
+    recurring: row.recurring, recurringProfileId: row.recurring_profile_id ?? undefined,
+    notes: row.notes ?? undefined, createdAt: row.created_at, items,
+  };
+}
+
+function dbToBillItem(row: any): BillItem {
+  return {
+    id: row.id, billId: row.bill_id, description: row.description,
+    accountId: row.account_id ?? undefined, quantity: Number(row.quantity),
+    unitPrice: Number(row.unit_price), taxRate: Number(row.tax_rate),
+    total: Number(row.total),
+  };
+}
+
+export async function fetchBills(): Promise<Bill[] | null> {
+  const { data: rows, error } = await supabase.from('bills').select('*').order('created_at', { ascending: false });
+  if (error || !rows) return null;
+  const { data: itemRows } = await supabase.from('bill_items').select('*');
+  const allItems = (itemRows ?? []).map(dbToBillItem);
+  return rows.map(r => dbToBill(r, allItems.filter(i => i.billId === r.id)));
+}
+
+export async function upsertBill(b: Bill): Promise<void> {
+  await supabase.from('bills').upsert({
+    id: b.id, bill_number: b.billNumber, vendor: b.vendor,
+    vendor_bill_ref: b.vendorBillRef ?? null, date: b.date,
+    due_date: b.dueDate, status: b.status, subtotal: b.subtotal,
+    vat: b.vat, total: b.total, currency: b.currency,
+    amount_paid: b.amountPaid, purchase_order_id: b.purchaseOrderId ?? null,
+    recurring: b.recurring, recurring_profile_id: b.recurringProfileId ?? null,
+    notes: b.notes ?? null,
+  }, { onConflict: 'id' });
+  if (b.items.length > 0) {
+    await supabase.from('bill_items').upsert(b.items.map(i => ({
+      id: i.id, bill_id: i.billId, description: i.description,
+      account_id: i.accountId ?? null, quantity: i.quantity,
+      unit_price: i.unitPrice, tax_rate: i.taxRate, total: i.total,
+    })), { onConflict: 'id' });
+  }
+}
+
+export async function deleteBill(id: string): Promise<void> {
+  await supabase.from('bills').delete().eq('id', id);
+}

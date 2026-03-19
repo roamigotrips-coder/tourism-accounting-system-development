@@ -1,5 +1,7 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import Sidebar, { Page } from './components/Sidebar';
+import Breadcrumbs from './components/Breadcrumbs';
+import QuickActionFAB from './components/QuickActionFAB';
 import { PresetsProvider } from './context/PresetsContext';
 import { BookingEstimateProvider } from './context/BookingEstimateContext';
 import { AttachmentsProvider } from './context/AttachmentsContext';
@@ -59,6 +61,20 @@ const RecurringInvoices  = lazy(() => import('./pages/RecurringInvoices'));
 const ApprovalEngine            = lazy(() => import('./pages/ApprovalEngine'));
 const FinancialReportBuilder    = lazy(() => import('./pages/FinancialReportBuilder'));
 const TransactionLocking        = lazy(() => import('./pages/TransactionLocking'));
+const Quotes                    = lazy(() => import('./pages/Quotes'));
+const SalesOrders               = lazy(() => import('./pages/SalesOrders'));
+const CreditNotes               = lazy(() => import('./pages/CreditNotes'));
+const Bills                     = lazy(() => import('./pages/Bills'));
+const Notifications             = lazy(() => import('./pages/Notifications'));
+const CustomerPortal            = lazy(() => import('./pages/CustomerPortal'));
+const VendorPortal              = lazy(() => import('./pages/VendorPortal'));
+const Budgeting                 = lazy(() => import('./pages/Budgeting'));
+const PriceLists                = lazy(() => import('./pages/PriceLists'));
+const EmailTemplates            = lazy(() => import('./pages/EmailTemplates'));
+const RevenueRecognition        = lazy(() => import('./pages/RevenueRecognition'));
+const Payroll                   = lazy(() => import('./pages/Payroll'));
+const DeliveryChallans          = lazy(() => import('./pages/DeliveryChallans'));
+const GlobalSearch              = lazy(() => import('./pages/GlobalSearch'));
 
 // ── Page loader fallback ───────────────────────────────────────────────────────
 function PageLoader() {
@@ -75,6 +91,18 @@ function PageLoader() {
 export function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Ctrl+K → Global Search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setCurrentPage('globalSearch');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const renderPage = () => {
     switch (currentPage) {
@@ -126,6 +154,20 @@ export function App() {
       case 'approvalEngine':          return <ApprovalEngine />;
       case 'financialReportBuilder':  return <FinancialReportBuilder />;
       case 'transactionLocking':      return <TransactionLocking />;
+      case 'quotes':                 return <Quotes />;
+      case 'salesOrders':            return <SalesOrders />;
+      case 'creditNotes':            return <CreditNotes />;
+      case 'bills':                  return <Bills />;
+      case 'notifications':          return <Notifications />;
+      case 'customerPortal':         return <CustomerPortal />;
+      case 'vendorPortal':           return <VendorPortal />;
+      case 'budgeting':              return <Budgeting />;
+      case 'priceLists':             return <PriceLists />;
+      case 'emailTemplates':         return <EmailTemplates />;
+      case 'revenueRecognition':     return <RevenueRecognition />;
+      case 'payroll':                return <Payroll />;
+      case 'deliveryChallans':       return <DeliveryChallans />;
+      case 'globalSearch':           return <GlobalSearch />;
       default:                        return <Dashboard />;
     }
   };
@@ -253,11 +295,13 @@ export function App() {
 
           {/* ── Page Content ── */}
           <div className="p-6 animate-fade-in">
+            <Breadcrumbs currentPage={currentPage} onNavigate={setCurrentPage} />
             <Suspense fallback={<PageLoader />}>
               {renderPage()}
             </Suspense>
           </div>
         </main>
+        <QuickActionFAB onNavigate={setCurrentPage} />
       </div>
     </AttachmentsProvider>
     </AutomationProvider>

@@ -5,6 +5,40 @@
 -- ============================================================
 
 -- ── Drop existing tables (order matters for foreign keys) ────
+DROP TABLE IF EXISTS activity_timeline CASCADE;
+DROP TABLE IF EXISTS user_preferences CASCADE;
+DROP TABLE IF EXISTS delivery_challans CASCADE;
+DROP TABLE IF EXISTS payroll_slips CASCADE;
+DROP TABLE IF EXISTS payroll_runs CASCADE;
+DROP TABLE IF EXISTS revenue_schedule_entries CASCADE;
+DROP TABLE IF EXISTS revenue_schedules CASCADE;
+DROP TABLE IF EXISTS expense_policies CASCADE;
+DROP TABLE IF EXISTS mileage_entries CASCADE;
+DROP TABLE IF EXISTS invoice_payments CASCADE;
+DROP TABLE IF EXISTS email_log CASCADE;
+DROP TABLE IF EXISTS email_templates CASCADE;
+DROP TABLE IF EXISTS invoice_templates CASCADE;
+DROP TABLE IF EXISTS composite_item_components CASCADE;
+DROP TABLE IF EXISTS composite_items CASCADE;
+DROP TABLE IF EXISTS price_list_items CASCADE;
+DROP TABLE IF EXISTS price_lists CASCADE;
+DROP TABLE IF EXISTS budget_lines CASCADE;
+DROP TABLE IF EXISTS budgets CASCADE;
+DROP TABLE IF EXISTS portal_messages CASCADE;
+DROP TABLE IF EXISTS portal_users CASCADE;
+DROP TABLE IF EXISTS payment_reminders CASCADE;
+DROP TABLE IF EXISTS transaction_tags CASCADE;
+DROP TABLE IF EXISTS report_tags CASCADE;
+DROP TABLE IF EXISTS saved_reports CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS bill_items CASCADE;
+DROP TABLE IF EXISTS bills CASCADE;
+DROP TABLE IF EXISTS credit_note_items CASCADE;
+DROP TABLE IF EXISTS credit_notes CASCADE;
+DROP TABLE IF EXISTS sales_order_items CASCADE;
+DROP TABLE IF EXISTS sales_orders CASCADE;
+DROP TABLE IF EXISTS quote_items CASCADE;
+DROP TABLE IF EXISTS quotes CASCADE;
 DROP TABLE IF EXISTS supplier_pending_invoices CASCADE;
 DROP TABLE IF EXISTS supplier_automation_rules CASCADE;
 DROP TABLE IF EXISTS currency_posting_docs CASCADE;
@@ -917,6 +951,532 @@ CREATE POLICY "allow_all" ON supplier_automation_rules FOR ALL USING (true) WITH
 CREATE POLICY "allow_all" ON supplier_pending_invoices FOR ALL USING (true) WITH CHECK (true);
 
 -- ══════════════════════════════════════════════════════════════
+-- 14. SALES PIPELINE — Quotes, Sales Orders, Credit Notes, Bills
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE quotes (
+  id              TEXT PRIMARY KEY,
+  quote_number    TEXT NOT NULL,
+  customer        TEXT NOT NULL DEFAULT '',
+  agent           TEXT,
+  date            TEXT NOT NULL,
+  expiry_date     TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft','Sent','Accepted','Declined','Expired','Converted')),
+  subtotal        NUMERIC NOT NULL DEFAULT 0,
+  discount_pct    NUMERIC NOT NULL DEFAULT 0,
+  vat             NUMERIC NOT NULL DEFAULT 0,
+  total           NUMERIC NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'AED',
+  notes           TEXT,
+  terms           TEXT,
+  converted_to_so  TEXT,
+  converted_to_inv TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE quote_items (
+  id            TEXT PRIMARY KEY,
+  quote_id      TEXT NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  description   TEXT NOT NULL DEFAULT '',
+  quantity      NUMERIC NOT NULL DEFAULT 1,
+  unit_price    NUMERIC NOT NULL DEFAULT 0,
+  discount_pct  NUMERIC NOT NULL DEFAULT 0,
+  tax_rate      NUMERIC NOT NULL DEFAULT 5,
+  total         NUMERIC NOT NULL DEFAULT 0
+);
+
+CREATE TABLE sales_orders (
+  id              TEXT PRIMARY KEY,
+  so_number       TEXT NOT NULL,
+  customer        TEXT NOT NULL DEFAULT '',
+  agent           TEXT,
+  date            TEXT NOT NULL,
+  delivery_date   TEXT,
+  status          TEXT NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft','Confirmed','In Progress','Delivered','Invoiced','Cancelled')),
+  subtotal        NUMERIC NOT NULL DEFAULT 0,
+  vat             NUMERIC NOT NULL DEFAULT 0,
+  total           NUMERIC NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'AED',
+  quote_id        TEXT,
+  invoice_id      TEXT,
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE sales_order_items (
+  id              TEXT PRIMARY KEY,
+  sales_order_id  TEXT NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+  description     TEXT NOT NULL DEFAULT '',
+  quantity        NUMERIC NOT NULL DEFAULT 1,
+  unit_price      NUMERIC NOT NULL DEFAULT 0,
+  discount_pct    NUMERIC NOT NULL DEFAULT 0,
+  tax_rate        NUMERIC NOT NULL DEFAULT 5,
+  total           NUMERIC NOT NULL DEFAULT 0
+);
+
+CREATE TABLE credit_notes (
+  id              TEXT PRIMARY KEY,
+  cn_number       TEXT NOT NULL,
+  type            TEXT NOT NULL DEFAULT 'Credit' CHECK (type IN ('Credit','Debit')),
+  invoice_id      TEXT,
+  customer        TEXT NOT NULL DEFAULT '',
+  date            TEXT NOT NULL,
+  reason          TEXT NOT NULL DEFAULT '',
+  subtotal        NUMERIC NOT NULL DEFAULT 0,
+  vat             NUMERIC NOT NULL DEFAULT 0,
+  total           NUMERIC NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'AED',
+  status          TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Open','Applied','Void')),
+  refund_status   TEXT DEFAULT 'None' CHECK (refund_status IN ('None','Partial','Full')),
+  refund_amount   NUMERIC NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE credit_note_items (
+  id              TEXT PRIMARY KEY,
+  credit_note_id  TEXT NOT NULL REFERENCES credit_notes(id) ON DELETE CASCADE,
+  description     TEXT NOT NULL DEFAULT '',
+  quantity        NUMERIC NOT NULL DEFAULT 1,
+  unit_price      NUMERIC NOT NULL DEFAULT 0,
+  total           NUMERIC NOT NULL DEFAULT 0
+);
+
+CREATE TABLE bills (
+  id                   TEXT PRIMARY KEY,
+  bill_number          TEXT NOT NULL,
+  vendor               TEXT NOT NULL DEFAULT '',
+  vendor_bill_ref      TEXT,
+  date                 TEXT NOT NULL,
+  due_date             TEXT NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft','Pending Approval','Approved','Partially Paid','Paid','Overdue','Void')),
+  subtotal             NUMERIC NOT NULL DEFAULT 0,
+  vat                  NUMERIC NOT NULL DEFAULT 0,
+  total                NUMERIC NOT NULL DEFAULT 0,
+  currency             TEXT NOT NULL DEFAULT 'AED',
+  amount_paid          NUMERIC NOT NULL DEFAULT 0,
+  purchase_order_id    TEXT,
+  recurring            BOOLEAN NOT NULL DEFAULT false,
+  recurring_profile_id TEXT,
+  notes                TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE bill_items (
+  id          TEXT PRIMARY KEY,
+  bill_id     TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+  description TEXT NOT NULL DEFAULT '',
+  account_id  TEXT,
+  quantity    NUMERIC NOT NULL DEFAULT 1,
+  unit_price  NUMERIC NOT NULL DEFAULT 0,
+  tax_rate    NUMERIC NOT NULL DEFAULT 5,
+  total       NUMERIC NOT NULL DEFAULT 0
+);
+
+-- RLS for Sales Pipeline
+ALTER TABLE quotes              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quote_items         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales_orders        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales_order_items   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_notes        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_note_items   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bills               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bill_items          ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all" ON quotes              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON quote_items         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON sales_orders        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON sales_order_items   FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON credit_notes        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON credit_note_items   FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON bills               FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON bill_items          FOR ALL USING (true) WITH CHECK (true);
+
+-- ══════════════════════════════════════════════════════════════
+-- 15. NOTIFICATIONS, REPORTS & PAYMENT REMINDERS
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE notifications (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL DEFAULT 'system',
+  type        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  message     TEXT NOT NULL DEFAULT '',
+  module      TEXT NOT NULL DEFAULT '',
+  entity_id   TEXT,
+  entity_type TEXT,
+  is_read     BOOLEAN NOT NULL DEFAULT false,
+  action_url  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE saved_reports (
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  type              TEXT NOT NULL,
+  config            JSONB NOT NULL DEFAULT '{}',
+  schedule          TEXT,
+  last_generated_at TIMESTAMPTZ,
+  created_by        TEXT NOT NULL DEFAULT '',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE report_tags (
+  id        TEXT PRIMARY KEY,
+  name      TEXT NOT NULL,
+  type      TEXT NOT NULL DEFAULT 'cost_center'
+    CHECK (type IN ('cost_center','department','project','region','custom')),
+  color     TEXT NOT NULL DEFAULT 'slate',
+  is_active BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE TABLE transaction_tags (
+  id          TEXT PRIMARY KEY,
+  tag_id      TEXT NOT NULL REFERENCES report_tags(id) ON DELETE CASCADE,
+  entity_id   TEXT NOT NULL,
+  entity_type TEXT NOT NULL
+);
+
+CREATE TABLE payment_reminders (
+  id             TEXT PRIMARY KEY,
+  invoice_id     TEXT NOT NULL,
+  customer       TEXT NOT NULL DEFAULT '',
+  type           TEXT NOT NULL DEFAULT 'before' CHECK (type IN ('before','on','after')),
+  days_offset    INTEGER NOT NULL DEFAULT 0,
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','skipped')),
+  scheduled_date TEXT NOT NULL,
+  sent_at        TIMESTAMPTZ,
+  template       TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 16. PORTALS, BUDGETING & PRICE LISTS
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE portal_users (
+  id          TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('customer','vendor','agent')),
+  entity_id   TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '',
+  password_hash TEXT,
+  token       TEXT,
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  last_login  TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE portal_messages (
+  id             TEXT PRIMARY KEY,
+  portal_user_id TEXT NOT NULL,
+  direction      TEXT NOT NULL DEFAULT 'inbound' CHECK (direction IN ('inbound','outbound')),
+  subject        TEXT NOT NULL DEFAULT '',
+  body           TEXT NOT NULL DEFAULT '',
+  attachments    JSONB NOT NULL DEFAULT '[]',
+  is_read        BOOLEAN NOT NULL DEFAULT false,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE budgets (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  fiscal_year TEXT NOT NULL,
+  type        TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('income','expense','combined')),
+  status      TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Active','Closed')),
+  period_type TEXT NOT NULL DEFAULT 'monthly' CHECK (period_type IN ('monthly','quarterly','yearly')),
+  created_by  TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE budget_lines (
+  id              TEXT PRIMARY KEY,
+  budget_id       TEXT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+  account_id      TEXT NOT NULL,
+  account_name    TEXT NOT NULL DEFAULT '',
+  period          TEXT NOT NULL,
+  budgeted_amount NUMERIC NOT NULL DEFAULT 0,
+  actual_amount   NUMERIC NOT NULL DEFAULT 0,
+  variance        NUMERIC NOT NULL DEFAULT 0,
+  notes           TEXT
+);
+
+CREATE TABLE price_lists (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  type        TEXT NOT NULL DEFAULT 'sales' CHECK (type IN ('sales','purchase')),
+  currency    TEXT NOT NULL DEFAULT 'AED',
+  markup_pct  NUMERIC NOT NULL DEFAULT 0,
+  discount_pct NUMERIC NOT NULL DEFAULT 0,
+  is_default  BOOLEAN NOT NULL DEFAULT false,
+  valid_from  TEXT,
+  valid_to    TEXT,
+  applies_to  JSONB NOT NULL DEFAULT '[]',
+  status      TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE price_list_items (
+  id             TEXT PRIMARY KEY,
+  price_list_id  TEXT NOT NULL REFERENCES price_lists(id) ON DELETE CASCADE,
+  item_id        TEXT,
+  item_name      TEXT NOT NULL DEFAULT '',
+  standard_price NUMERIC NOT NULL DEFAULT 0,
+  list_price     NUMERIC NOT NULL DEFAULT 0,
+  markup_pct     NUMERIC NOT NULL DEFAULT 0,
+  discount_pct   NUMERIC NOT NULL DEFAULT 0
+);
+
+CREATE TABLE composite_items (
+  id            TEXT PRIMARY KEY,
+  code          TEXT NOT NULL DEFAULT '',
+  name          TEXT NOT NULL DEFAULT '',
+  description   TEXT NOT NULL DEFAULT '',
+  unit          TEXT NOT NULL DEFAULT 'kit',
+  selling_price NUMERIC NOT NULL DEFAULT 0,
+  cost_price    NUMERIC NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE composite_item_components (
+  id                TEXT PRIMARY KEY,
+  composite_item_id TEXT NOT NULL REFERENCES composite_items(id) ON DELETE CASCADE,
+  inventory_item_id TEXT NOT NULL,
+  item_name         TEXT NOT NULL DEFAULT '',
+  quantity          NUMERIC NOT NULL DEFAULT 1,
+  unit_cost         NUMERIC NOT NULL DEFAULT 0
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 17. INVOICE TEMPLATES, EMAIL & EXPENSE POLICIES
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE invoice_templates (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  html_template TEXT NOT NULL DEFAULT '',
+  logo_url      TEXT,
+  primary_color TEXT NOT NULL DEFAULT '#10b981',
+  footer_text   TEXT,
+  is_default    BOOLEAN NOT NULL DEFAULT false,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE email_templates (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  type       TEXT NOT NULL DEFAULT 'invoice'
+    CHECK (type IN ('invoice','reminder','statement','receipt','welcome','custom')),
+  subject    TEXT NOT NULL DEFAULT '',
+  body_html  TEXT NOT NULL DEFAULT '',
+  variables  JSONB NOT NULL DEFAULT '[]',
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE email_log (
+  id          TEXT PRIMARY KEY,
+  template_id TEXT,
+  to_address  TEXT NOT NULL,
+  subject     TEXT NOT NULL,
+  body        TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed','bounced')),
+  entity_type TEXT,
+  entity_id   TEXT,
+  sent_at     TIMESTAMPTZ,
+  error       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE invoice_payments (
+  id         TEXT PRIMARY KEY,
+  invoice_id TEXT NOT NULL,
+  amount     NUMERIC NOT NULL DEFAULT 0,
+  date       TEXT NOT NULL,
+  method     TEXT NOT NULL DEFAULT '',
+  reference  TEXT,
+  notes      TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE mileage_entries (
+  id            TEXT PRIMARY KEY,
+  employee_id   TEXT,
+  date          TEXT NOT NULL,
+  from_location TEXT NOT NULL DEFAULT '',
+  to_location   TEXT NOT NULL DEFAULT '',
+  distance_km   NUMERIC NOT NULL DEFAULT 0,
+  rate_per_km   NUMERIC NOT NULL DEFAULT 0.5,
+  amount        NUMERIC NOT NULL DEFAULT 0,
+  purpose       TEXT NOT NULL DEFAULT '',
+  is_billable   BOOLEAN NOT NULL DEFAULT false,
+  project_id    TEXT,
+  status        TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Approved','Rejected','Reimbursed')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE expense_policies (
+  id                     TEXT PRIMARY KEY,
+  name                   TEXT NOT NULL,
+  category               TEXT NOT NULL DEFAULT '',
+  max_amount             NUMERIC,
+  requires_receipt_above NUMERIC NOT NULL DEFAULT 0,
+  requires_approval_above NUMERIC NOT NULL DEFAULT 0,
+  is_active              BOOLEAN NOT NULL DEFAULT true,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 18. REVENUE RECOGNITION, PAYROLL & DELIVERY
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE revenue_schedules (
+  id                TEXT PRIMARY KEY,
+  invoice_id        TEXT NOT NULL,
+  customer          TEXT NOT NULL DEFAULT '',
+  total_amount      NUMERIC NOT NULL DEFAULT 0,
+  recognized_amount NUMERIC NOT NULL DEFAULT 0,
+  deferred_amount   NUMERIC NOT NULL DEFAULT 0,
+  start_date        TEXT NOT NULL,
+  end_date          TEXT NOT NULL,
+  method            TEXT NOT NULL DEFAULT 'straight_line'
+    CHECK (method IN ('straight_line','milestone','percentage_completion')),
+  status            TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Completed','Cancelled')),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE revenue_schedule_entries (
+  id               TEXT PRIMARY KEY,
+  schedule_id      TEXT NOT NULL REFERENCES revenue_schedules(id) ON DELETE CASCADE,
+  period           TEXT NOT NULL,
+  amount           NUMERIC NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Recognized','Skipped')),
+  journal_entry_id TEXT,
+  recognized_at    TIMESTAMPTZ
+);
+
+CREATE TABLE payroll_runs (
+  id               TEXT PRIMARY KEY,
+  period           TEXT NOT NULL,
+  run_date         TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Processing','Completed','Void')),
+  total_gross      NUMERIC NOT NULL DEFAULT 0,
+  total_deductions NUMERIC NOT NULL DEFAULT 0,
+  total_net        NUMERIC NOT NULL DEFAULT 0,
+  employee_count   INTEGER NOT NULL DEFAULT 0,
+  journal_entry_id TEXT,
+  notes            TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE payroll_slips (
+  id             TEXT PRIMARY KEY,
+  payroll_run_id TEXT NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+  employee_id    TEXT NOT NULL,
+  employee_name  TEXT NOT NULL DEFAULT '',
+  basic_salary   NUMERIC NOT NULL DEFAULT 0,
+  allowances     JSONB NOT NULL DEFAULT '{}',
+  deductions     JSONB NOT NULL DEFAULT '{}',
+  gross          NUMERIC NOT NULL DEFAULT 0,
+  net            NUMERIC NOT NULL DEFAULT 0
+);
+
+CREATE TABLE delivery_challans (
+  id              TEXT PRIMARY KEY,
+  challan_number  TEXT NOT NULL,
+  sales_order_id  TEXT,
+  customer        TEXT NOT NULL DEFAULT '',
+  date            TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'Draft'
+    CHECK (status IN ('Draft','Dispatched','Delivered','Returned')),
+  items           JSONB NOT NULL DEFAULT '[]',
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- 19. UI/UX — User Preferences & Activity Timeline
+-- ══════════════════════════════════════════════════════════════
+
+CREATE TABLE user_preferences (
+  id                 TEXT PRIMARY KEY,
+  user_id            TEXT NOT NULL,
+  saved_filters      JSONB NOT NULL DEFAULT '{}',
+  quick_actions      JSONB NOT NULL DEFAULT '[]',
+  keyboard_shortcuts JSONB NOT NULL DEFAULT '{}',
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE activity_timeline (
+  id          TEXT PRIMARY KEY,
+  entity_id   TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  action      TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  user_name   TEXT NOT NULL DEFAULT '',
+  metadata    JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS for all new Phase 2-6 tables
+ALTER TABLE notifications           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_reports            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE report_tags              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transaction_tags         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_reminders        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portal_users             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portal_messages          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budgets                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budget_lines             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE price_lists              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE price_list_items         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE composite_items          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE composite_item_components ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice_templates        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_templates          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_log                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice_payments         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mileage_entries          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expense_policies         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE revenue_schedules        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE revenue_schedule_entries  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payroll_runs             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payroll_slips            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE delivery_challans        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_preferences         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_timeline        ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all" ON notifications           FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON saved_reports            FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON report_tags              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON transaction_tags         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON payment_reminders        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON portal_users             FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON portal_messages          FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON budgets                  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON budget_lines             FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON price_lists              FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON price_list_items         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON composite_items          FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON composite_item_components FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON invoice_templates        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON email_templates          FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON email_log                FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON invoice_payments         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON mileage_entries          FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON expense_policies         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON revenue_schedules        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON revenue_schedule_entries  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON payroll_runs             FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON payroll_slips            FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON delivery_challans        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON user_preferences         FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON activity_timeline        FOR ALL USING (true) WITH CHECK (true);
+
+-- ══════════════════════════════════════════════════════════════
 -- INDEXES
 -- ══════════════════════════════════════════════════════════════
 
@@ -952,3 +1512,45 @@ CREATE INDEX idx_fa_status ON fixed_assets(status);
 CREATE INDEX idx_cpd_status ON currency_posting_docs(status);
 CREATE INDEX idx_sar_status ON supplier_automation_rules(status);
 CREATE INDEX idx_spi_status ON supplier_pending_invoices(status);
+
+-- Sales Pipeline indexes
+CREATE INDEX idx_quotes_status ON quotes(status);
+CREATE INDEX idx_quotes_customer ON quotes(customer);
+CREATE INDEX idx_qi_quote ON quote_items(quote_id);
+CREATE INDEX idx_so_status ON sales_orders(status);
+CREATE INDEX idx_so_customer ON sales_orders(customer);
+CREATE INDEX idx_soi_order ON sales_order_items(sales_order_id);
+CREATE INDEX idx_cn_status ON credit_notes(status);
+CREATE INDEX idx_cn_customer ON credit_notes(customer);
+CREATE INDEX idx_cni_note ON credit_note_items(credit_note_id);
+CREATE INDEX idx_bills_status ON bills(status);
+CREATE INDEX idx_bills_vendor ON bills(vendor);
+CREATE INDEX idx_bi_bill ON bill_items(bill_id);
+
+-- Phase 2-6 indexes
+CREATE INDEX idx_notif_user ON notifications(user_id);
+CREATE INDEX idx_notif_read ON notifications(is_read);
+CREATE INDEX idx_notif_type ON notifications(type);
+CREATE INDEX idx_sr_type ON saved_reports(type);
+CREATE INDEX idx_tt_entity ON transaction_tags(entity_id, entity_type);
+CREATE INDEX idx_tt_tag ON transaction_tags(tag_id);
+CREATE INDEX idx_pr_invoice ON payment_reminders(invoice_id);
+CREATE INDEX idx_pr_status ON payment_reminders(status);
+CREATE INDEX idx_pu_entity ON portal_users(entity_type, entity_id);
+CREATE INDEX idx_pm_user ON portal_messages(portal_user_id);
+CREATE INDEX idx_budgets_year ON budgets(fiscal_year);
+CREATE INDEX idx_bl_budget ON budget_lines(budget_id);
+CREATE INDEX idx_pl_status ON price_lists(status);
+CREATE INDEX idx_pli_list ON price_list_items(price_list_id);
+CREATE INDEX idx_ci_status ON composite_items(status);
+CREATE INDEX idx_cic_item ON composite_item_components(composite_item_id);
+CREATE INDEX idx_el_status ON email_log(status);
+CREATE INDEX idx_ip_invoice ON invoice_payments(invoice_id);
+CREATE INDEX idx_me_status ON mileage_entries(status);
+CREATE INDEX idx_rs_invoice ON revenue_schedules(invoice_id);
+CREATE INDEX idx_rse_schedule ON revenue_schedule_entries(schedule_id);
+CREATE INDEX idx_payroll_status ON payroll_runs(status);
+CREATE INDEX idx_ps_run ON payroll_slips(payroll_run_id);
+CREATE INDEX idx_dc_status ON delivery_challans(status);
+CREATE INDEX idx_up_user ON user_preferences(user_id);
+CREATE INDEX idx_at_entity ON activity_timeline(entity_id, entity_type);

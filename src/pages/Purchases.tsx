@@ -272,6 +272,11 @@ export default function Purchases() {
                       <button className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit">
                         <Edit size={16} />
                       </button>
+                      {(po.status === 'approved' || po.status === 'received') && (
+                        <button className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors" title="Convert to Bill">
+                          <FileText size={16} />
+                        </button>
+                      )}
                       <button className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                         <Trash2 size={16} />
                       </button>
