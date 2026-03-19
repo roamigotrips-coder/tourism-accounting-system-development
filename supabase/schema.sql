@@ -1271,10 +1271,11 @@ CREATE TABLE email_templates (
   type       TEXT NOT NULL DEFAULT 'invoice'
     CHECK (type IN ('invoice','reminder','statement','receipt','welcome','custom')),
   subject    TEXT NOT NULL DEFAULT '',
-  body_html  TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
   variables  JSONB NOT NULL DEFAULT '[]',
   is_default BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE email_log (
@@ -1367,6 +1368,8 @@ CREATE TABLE payroll_runs (
   total_deductions NUMERIC NOT NULL DEFAULT 0,
   total_net        NUMERIC NOT NULL DEFAULT 0,
   employee_count   INTEGER NOT NULL DEFAULT 0,
+  processed_at     TIMESTAMPTZ,
+  posted_at        TIMESTAMPTZ,
   journal_entry_id TEXT,
   notes            TEXT,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1374,14 +1377,15 @@ CREATE TABLE payroll_runs (
 
 CREATE TABLE payroll_slips (
   id             TEXT PRIMARY KEY,
-  payroll_run_id TEXT NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+  run_id         TEXT NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
   employee_id    TEXT NOT NULL,
   employee_name  TEXT NOT NULL DEFAULT '',
   basic_salary   NUMERIC NOT NULL DEFAULT 0,
-  allowances     JSONB NOT NULL DEFAULT '{}',
-  deductions     JSONB NOT NULL DEFAULT '{}',
-  gross          NUMERIC NOT NULL DEFAULT 0,
-  net            NUMERIC NOT NULL DEFAULT 0
+  allowances     NUMERIC NOT NULL DEFAULT 0,
+  deductions     NUMERIC NOT NULL DEFAULT 0,
+  gross_pay      NUMERIC NOT NULL DEFAULT 0,
+  net_pay        NUMERIC NOT NULL DEFAULT 0,
+  status         TEXT NOT NULL DEFAULT 'Draft'
 );
 
 CREATE TABLE delivery_challans (
@@ -1392,8 +1396,10 @@ CREATE TABLE delivery_challans (
   date            TEXT NOT NULL,
   status          TEXT NOT NULL DEFAULT 'Draft'
     CHECK (status IN ('Draft','Dispatched','Delivered','Returned')),
-  items           JSONB NOT NULL DEFAULT '[]',
+  items           TEXT,
   notes           TEXT,
+  dispatched_at   TIMESTAMPTZ,
+  delivered_at    TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -1550,7 +1556,7 @@ CREATE INDEX idx_me_status ON mileage_entries(status);
 CREATE INDEX idx_rs_invoice ON revenue_schedules(invoice_id);
 CREATE INDEX idx_rse_schedule ON revenue_schedule_entries(schedule_id);
 CREATE INDEX idx_payroll_status ON payroll_runs(status);
-CREATE INDEX idx_ps_run ON payroll_slips(payroll_run_id);
+CREATE INDEX idx_ps_run ON payroll_slips(run_id);
 CREATE INDEX idx_dc_status ON delivery_challans(status);
 CREATE INDEX idx_up_user ON user_preferences(user_id);
 CREATE INDEX idx_at_entity ON activity_timeline(entity_id, entity_type);
