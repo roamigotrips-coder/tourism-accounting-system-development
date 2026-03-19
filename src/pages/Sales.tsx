@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { Booking } from '../data/mockData';
-import { upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
+import { upsertEstimate as upsertEstimateDb, fetchAgents } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
@@ -17,7 +17,7 @@ import { showToast, catchAndReport } from '../lib/toast';
 const serviceTypes = ['All', 'Tour Package', 'Transfer', 'Hotel Booking', 'Visa Services', 'Tickets', 'Activities'];
 const paymentStatuses = ['Pending', 'Paid', 'Partial'];
 const currencies = ['AED', 'USD', 'EUR', 'GBP', 'INR'];
-const agentsList = ['Global Tours UK', 'Euro Holidays', 'Asia Travel Co', 'Gulf Travels', 'Desert Adventures'];
+// agentsList loaded from DB below
 
 interface CostingItem {
   label: string;
@@ -162,6 +162,14 @@ export default function Sales() {
   const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentRecord[]>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [costingExpanded, setCostingExpanded] = useState(true);
+  const [agentsList, setAgentsList] = useState<string[]>([]);
+
+  // Load agents from DB
+  useEffect(() => {
+    fetchAgents()
+      .then(agents => setAgentsList(agents.filter(a => a.status === 'Active').map(a => a.name)))
+      .catch(catchAndReport('Load agents'));
+  }, []);
 
   // Upload states
   const [dragOver, setDragOver] = useState(false);
