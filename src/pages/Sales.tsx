@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { Booking } from '../data/mockData';
-import { fetchEstimates } from '../lib/supabaseSync';
+import { fetchEstimates, upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
 import { useAuditTrail } from '../context/AuditTrailContext';
+import { showToast, catchAndReport } from '../lib/toast';
 
 
 const serviceTypes = ['All', 'Tour Package', 'Transfer', 'Hotel Booking', 'Visa Services', 'Tickets', 'Activities'];
@@ -146,7 +147,7 @@ function isCostingValid(form: BookingForm): { valid: boolean; errors: string[] }
 import { useAutomation } from '../context/AutomationContext';
 
 export default function Sales() {
-  const { addEstimate } = useBookingEstimates();
+  const { addEstimate, estimates } = useBookingEstimates();
   const { publish } = useAutomation();
   const { logAction } = useAuditTrail();
   const [sentToFinance, setSentToFinance] = useState(false);
@@ -403,13 +404,8 @@ export default function Sales() {
   };
 
   const parsePDF = (_file: File) => {
-    setUploadStatus('preview');
-    const mockRows: UploadedRow[] = [
-      { agent: 'Global Tours UK', customer: 'PDF Import - Row 1', serviceType: 'Tour Package', serviceDate: '2024-08-15', sellingPrice: 2500, currency: 'AED', paymentStatus: 'Pending', valid: true },
-      { agent: 'Euro Holidays', customer: 'PDF Import - Row 2', serviceType: 'Transfer', serviceDate: '2024-08-16', sellingPrice: 800, currency: 'AED', paymentStatus: 'Paid', valid: true },
-    ];
-    setUploadedRows(mockRows);
-    setSelectedRows(new Set([0, 1]));
+    setUploadError('PDF import is not supported yet. Please convert the PDF to Excel (.xlsx) or CSV and try again.');
+    setUploadStatus('error');
   };
 
   const handleFile = useCallback((file: File) => {
@@ -460,18 +456,53 @@ export default function Sales() {
 
   const handleImport = () => {
     const toImport = uploadedRows.filter((_, i) => selectedRows.has(i));
-    const newBookings = toImport.map((row, idx) => ({
-      id: `BK-2024-${String(bookingList.length + idx + 1).padStart(4, '0')}`,
-      agent: row.agent,
-      customer: row.customer,
-      serviceType: row.serviceType,
-      serviceDate: row.serviceDate,
-      sellingPrice: row.sellingPrice,
-      vat: row.sellingPrice * 0.05,
-      currency: row.currency,
-      paymentStatus: row.paymentStatus as 'Paid' | 'Pending' | 'Partial',
-    }));
+    const newBookings: Booking[] = [];
+
+    toImport.forEach((row, idx) => {
+      const bookingRef = `BK-2024-${String(bookingList.length + idx + 1).padStart(4, '0')}`;
+      const estId = `EST-IMP-${Date.now()}-${idx}`;
+      const price = row.sellingPrice;
+      const vat = price * 0.05;
+      const total = price + vat;
+
+      // Persist each imported booking to Supabase via context
+      const estimate: BookingEstimate = {
+        id: estId,
+        bookingRef,
+        agent: row.agent,
+        customer: row.customer,
+        serviceType: row.serviceType,
+        serviceDate: row.serviceDate,
+        sellingPrice: price,
+        vat,
+        total,
+        currency: row.currency,
+        paymentStatus: row.paymentStatus,
+        paymentReceived: row.paymentStatus === 'Paid' ? total : 0,
+        paymentMade: 0,
+        notes: 'Imported from file',
+        submittedAt: new Date().toISOString(),
+        submittedBy: 'Sales Team (Import)',
+        status: 'Pending Approval',
+        isTourPackage: row.serviceType === 'Tour Package',
+      };
+      addEstimate(estimate);
+
+      newBookings.push({
+        id: bookingRef,
+        agent: row.agent,
+        customer: row.customer,
+        serviceType: row.serviceType,
+        serviceDate: row.serviceDate,
+        sellingPrice: price,
+        vat,
+        currency: row.currency,
+        paymentStatus: row.paymentStatus as 'Paid' | 'Pending' | 'Partial',
+      });
+    });
+
     setBookingList(prev => [...newBookings, ...prev] as typeof prev);
+    showToast(`${newBookings.length} booking(s) imported and saved`, 'success');
     setUploadStatus('success');
     setTimeout(() => {
       setShowModal(false);
@@ -504,15 +535,31 @@ export default function Sales() {
   const handlePaymentSave = (payment: PaymentRecord, newStatus: 'Paid' | 'Partial' | 'Unpaid') => {
     if (!paymentConfig) return;
     const bookingId = paymentConfig.invoiceId;
+    const mappedStatus = newStatus === 'Paid' ? 'Paid' : newStatus === 'Partial' ? 'Partial' : 'Pending';
+
     setPaymentHistory(prev => ({ ...prev, [bookingId]: [...(prev[bookingId] || []), payment] }));
     setBookingList(prev => prev.map(b =>
       b.id === bookingId
-        ? { ...b, paymentStatus: newStatus === 'Paid' ? 'Paid' : newStatus === 'Partial' ? 'Partial' : b.paymentStatus } as typeof b
+        ? { ...b, paymentStatus: mappedStatus } as typeof b
         : b
     ));
     if (viewBooking?.id === bookingId) {
-      setViewBooking(prev => prev ? { ...prev, paymentStatus: newStatus === 'Paid' ? 'Paid' : 'Partial' } as typeof prev : prev);
+      setViewBooking(prev => prev ? { ...prev, paymentStatus: mappedStatus } as typeof prev : prev);
     }
+
+    // Persist payment status change to Supabase
+    // Find the matching estimate by bookingRef and update it
+    const matchingEstimate = estimates.find(e => e.bookingRef === bookingId);
+    if (matchingEstimate) {
+      const totalPaid = [...(paymentHistory[bookingId] || []), payment].reduce((s, p) => s + p.amount, 0);
+      const updated: BookingEstimate = {
+        ...matchingEstimate,
+        paymentStatus: mappedStatus,
+        paymentReceived: totalPaid,
+      };
+      upsertEstimateDb(updated).catch(catchAndReport('Update payment status'));
+    }
+    showToast(`Payment of ${payment.amount.toLocaleString()} ${paymentConfig.currency} recorded`, 'success');
   };
 
   const downloadTemplate = () => {
