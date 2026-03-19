@@ -3,8 +3,11 @@ import { Plus, Search, Edit2, Play, Pause, RotateCcw, DollarSign, Users, Calenda
 import { fetchRecurringProfiles, upsertRecurringProfile, type RecurringProfile } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { catchAndReport } from '../lib/toast';
+import { useCurrency } from '../context/CurrencyContext';
 
 export default function RecurringProfiles() {
+  const { currencies: allCurrencies } = useCurrency();
+  const currencyCodes = allCurrencies.filter(c => c.enabled).map(c => c.code);
   const [profiles, setProfiles] = useState<RecurringProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -268,7 +271,7 @@ export default function RecurringProfiles() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
                   <select value={formCurrency} onChange={e => setFormCurrency(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                    {['AED', 'USD', 'EUR', 'GBP', 'SAR'].map(c => <option key={c} value={c}>{c}</option>)}
+                    {currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>

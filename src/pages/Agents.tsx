@@ -5,7 +5,7 @@ import { fetchAgents, upsertAgent } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
-import { catchAndReport } from '../lib/toast';
+import { catchAndReport, showToast } from '../lib/toast';
 
 const countries = ['United Kingdom', 'Germany', 'France', 'India', 'USA', 'Australia', 'UAE', 'Singapore', 'Japan', 'China'];
 const paymentTermsList = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Advance', 'On Delivery'];
@@ -228,8 +228,8 @@ export default function Agents() {
                   <DollarSign size={15} /> Record Payment
                 </button>
                 <div className="flex gap-2">
-                  <button className="flex-1 flex items-center justify-center gap-1 bg-blue-50 text-blue-600 py-2 rounded-lg text-xs font-medium hover:bg-blue-100"><FileText size={14} /> Statement</button>
-                  <button className="flex-1 flex items-center justify-center gap-1 bg-slate-50 text-slate-600 py-2 rounded-lg text-xs font-medium hover:bg-slate-100"><FileText size={14} /> Ledger</button>
+                  <button onClick={() => showToast('Agent statement generation coming soon', 'warning')} className="flex-1 flex items-center justify-center gap-1 bg-blue-50 text-blue-600 py-2 rounded-lg text-xs font-medium hover:bg-blue-100"><FileText size={14} /> Statement</button>
+                  <button onClick={() => showToast('Agent ledger view coming soon', 'warning')} className="flex-1 flex items-center justify-center gap-1 bg-slate-50 text-slate-600 py-2 rounded-lg text-xs font-medium hover:bg-slate-100"><FileText size={14} /> Ledger</button>
                 </div>
               </div>
             </div>

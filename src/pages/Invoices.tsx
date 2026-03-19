@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { routeApproval, getCFOThreshold, getWorkflowSteps } from '../utils/approvalThresholds';
 import type { ApprovalItem } from '../context/ApprovalContext';
-import { fetchInvoices, upsertInvoice } from '../lib/supabaseSync';
+import { fetchInvoices, upsertInvoice, fetchAgents, fetchSuppliers } from '../lib/supabaseSync';
+import { useCurrency } from '../context/CurrencyContext';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
@@ -180,9 +181,7 @@ function InvoiceApprovalPanel({ inv, approval, onSubmit, onPostGL, canPost }: {
 }
 
 const TYPES = ['All', 'Agent', 'Customer', 'Supplier'];
-const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP'];
-const AGENT_OPTIONS = ['Global Tours UK', 'Euro Holidays', 'Asia Travel Co', 'US Travels Inc', 'India Voyages'];
-const SUPPLIER_OPTIONS = ['Marriott Hotels UAE', 'Desert Safari LLC', 'City Transport Co', 'Dubai Attractions', 'Premium Stays'];
+// AGENT_OPTIONS, SUPPLIER_OPTIONS, CURRENCIES loaded from DB inside component
 const STATUS_OPTIONS = ['Unpaid', 'Paid', 'Overdue'];
 
 const COMPANY = {
@@ -452,6 +451,15 @@ export default function Invoices() {
   const { estimates, approveEstimate, rejectEstimate, markInvoiced, pendingCount } = useBookingEstimates();
   const { ensureApprovalRequest, getByRef, canPostByRef, postToGL } = useApproval();
   const { logAction } = useAuditTrail();
+  const { currencies: allCurrencies } = useCurrency();
+  const CURRENCIES = allCurrencies.filter(c => c.enabled).map(c => c.code);
+
+  const [AGENT_OPTIONS, setAgentOptions] = useState<string[]>([]);
+  const [SUPPLIER_OPTIONS, setSupplierOptions] = useState<string[]>([]);
+  useEffect(() => {
+    fetchAgents().then(data => setAgentOptions(data.filter(a => a.status === 'Active').map(a => a.name))).catch(catchAndReport('Load agents'));
+    fetchSuppliers().then(data => setSupplierOptions(data.filter(s => s.status === 'Active').map(s => s.name))).catch(catchAndReport('Load suppliers'));
+  }, []);
 
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');

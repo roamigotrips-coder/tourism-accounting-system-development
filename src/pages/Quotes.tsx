@@ -9,10 +9,12 @@ import {
   fetchQuotes, upsertQuote, deleteQuote,
 } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { useCurrency } from '../context/CurrencyContext';
+import { showToast } from '../lib/toast';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const currencies = ['AED', 'USD', 'EUR', 'GBP', 'INR', 'SAR'];
+// currencies loaded from CurrencyContext inside component
 
 type QuoteStatus = Quote['status'];
 
@@ -71,6 +73,8 @@ function fmt(n: number, cur: string) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Quotes() {
+  const { currencies: allCurrencies } = useCurrency();
+  const currencies = allCurrencies.filter(c => c.enabled).map(c => c.code);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +141,7 @@ export default function Quotes() {
     };
     await upsertQuote(updated);
     setQuotes(prev => prev.map(x => x.id === id ? updated : x));
-    alert(`Quote ${q.quoteNumber} converted to ${target === 'invoice' ? 'Invoice' : 'Sales Order'} successfully.`);
+    showToast(`Quote ${q.quoteNumber} converted to ${target === 'invoice' ? 'Invoice' : 'Sales Order'} successfully.`, 'success');
   }
 
   // ── Open form ──

@@ -6,6 +6,7 @@ import {
 } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { catchAndReport } from '../lib/toast';
+import { useCurrency } from '../context/CurrencyContext';
 
 function nextDate(start: Date, interval: Retainer['interval']): Date {
   const d = new Date(start);
@@ -16,6 +17,8 @@ function nextDate(start: Date, interval: Retainer['interval']): Date {
 }
 
 export default function Retainers() {
+  const { currencies: allCurrencies } = useCurrency();
+  const currencyCodes = allCurrencies.filter(c => c.enabled).map(c => c.code);
   const [items, setItems] = useState<Retainer[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Retainer | null>(null);
@@ -158,7 +161,7 @@ export default function Retainers() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
                   <select value={form.currency as any} onChange={e=>setForm(v=>({...v,currency:e.target.value}))} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
-                    {['AED','USD','EUR','GBP','INR'].map(c => <option key={c}>{c}</option>)}
+                    {currencyCodes.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>

@@ -9,10 +9,11 @@ import {
   fetchSalesOrders, upsertSalesOrder, deleteSalesOrder,
 } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { useCurrency } from '../context/CurrencyContext';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'SAR', 'INR'];
+// CURRENCIES loaded from CurrencyContext inside component
 
 type SOStatus = SalesOrder['status'];
 
@@ -98,6 +99,9 @@ function orderToForm(o: SalesOrder): FormState {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function SalesOrders() {
+  const { currencies: allCurrencies } = useCurrency();
+  const CURRENCIES = allCurrencies.filter(c => c.enabled).map(c => c.code);
+
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

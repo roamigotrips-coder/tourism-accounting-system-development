@@ -3,7 +3,7 @@ import { Search, Plus, Upload, Bell, ArrowRight, X, Save } from 'lucide-react';
 import type { Supplier } from '../data/mockData';
 import { fetchSuppliers, upsertSupplier } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
-import { catchAndReport } from '../lib/toast';
+import { catchAndReport, showToast } from '../lib/toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const supplierTypes = ['Hotel', 'Transport', 'Activity Provider', 'Tour Guide', 'Tickets', 'Visa Services'];
@@ -159,12 +159,12 @@ export default function Suppliers() {
           <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
             <h3 className="font-semibold text-slate-800 mb-4">Supplier Automation</h3>
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+              <div onClick={() => showToast('Navigate to Supplier Automation for invoice upload', 'warning')} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
                 <Upload size={18} className="text-blue-600" />
                 <div className="flex-1"><p className="text-sm font-medium text-slate-800">Invoice Upload</p><p className="text-xs text-slate-500">Auto-match with bookings</p></div>
                 <ArrowRight size={14} className="text-slate-400" />
               </div>
-              <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+              <div onClick={() => showToast('Payment reminders coming soon', 'warning')} className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
                 <Bell size={18} className="text-amber-600" />
                 <div className="flex-1"><p className="text-sm font-medium text-slate-800">Payment Reminders</p><p className="text-xs text-slate-500">3 pending reminders</p></div>
                 <ArrowRight size={14} className="text-slate-400" />

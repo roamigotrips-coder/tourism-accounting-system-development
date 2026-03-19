@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Download, AlertTriangle, Package } from 'lucide-react';
-import { fetchInventoryItems, type InventoryItem } from '../lib/supabaseSync';
+import { fetchInventoryItems, upsertInventoryItem, type InventoryItem } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { showToast, catchAndReport } from '../lib/toast';
 
 export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,6 +10,56 @@ export default function Inventory() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [txnItemId, setTxnItemId] = useState<string | null>(null);
+
+  const emptyItemForm = { code: '', name: '', category: '', unit: '', quantity: '0', unitCost: '0', minStockLevel: '0', maxStockLevel: '0', location: '' };
+  const [itemForm, setItemForm] = useState(emptyItemForm);
+  const uf = (f: string, v: string) => setItemForm(p => ({ ...p, [f]: v }));
+
+  const emptyTxnForm = { type: 'Stock In', quantity: '0', reference: '', notes: '' };
+  const [txnForm, setTxnForm] = useState(emptyTxnForm);
+  const tf = (f: string, v: string) => setTxnForm(p => ({ ...p, [f]: v }));
+
+  const computeStatus = (qty: number, min: number): string =>
+    qty <= 0 ? 'Out of Stock' : qty <= min ? 'Low Stock' : 'In Stock';
+
+  const handleAddItem = () => {
+    if (!itemForm.code || !itemForm.name) { showToast('Code and Name are required', 'error'); return; }
+    const qty = parseInt(itemForm.quantity) || 0;
+    const min = parseInt(itemForm.minStockLevel) || 0;
+    const item: InventoryItem = {
+      id: crypto.randomUUID(), code: itemForm.code, name: itemForm.name,
+      category: itemForm.category || 'General', description: '', unit: itemForm.unit || 'pcs',
+      quantity: qty, unitCost: parseFloat(itemForm.unitCost) || 0,
+      minStockLevel: min, maxStockLevel: parseInt(itemForm.maxStockLevel) || 0,
+      location: itemForm.location, status: computeStatus(qty, min), supplier: '',
+    };
+    setAllItems(prev => [item, ...prev]);
+    setShowAddModal(false);
+    setItemForm(emptyItemForm);
+    showToast(`Item ${item.code} added`, 'success');
+    upsertInventoryItem(item).catch(catchAndReport('Save inventory item'));
+  };
+
+  const handleTransaction = () => {
+    if (!txnItemId) return;
+    const adjQty = parseInt(txnForm.quantity) || 0;
+    if (adjQty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
+    setAllItems(prev => prev.map(item => {
+      if (item.id !== txnItemId) return item;
+      let newQty = item.quantity;
+      if (txnForm.type === 'Stock In') newQty += adjQty;
+      else if (txnForm.type === 'Stock Out') newQty = Math.max(0, newQty - adjQty);
+      else newQty = adjQty; // Adjustment = set to value
+      const updated = { ...item, quantity: newQty, status: computeStatus(newQty, item.minStockLevel) };
+      upsertInventoryItem(updated).catch(catchAndReport('Update inventory'));
+      return updated;
+    }));
+    showToast(`${txnForm.type}: ${adjQty} units recorded`, 'success');
+    setShowTransactionModal(false);
+    setTxnForm(emptyTxnForm);
+    setTxnItemId(null);
+  };
 
   const [allItems, setAllItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,8 +243,8 @@ export default function Inventory() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <button 
-                      onClick={() => setShowTransactionModal(true)}
+                    <button
+                      onClick={() => { setTxnItemId(item.id); setShowTransactionModal(true); }}
                       className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                     >
                       Adjust
@@ -216,50 +267,50 @@ export default function Inventory() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Item Code *</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., ITM001" />
+                <input type="text" value={itemForm.code} onChange={e => uf('code', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., ITM001" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Item Name *</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Tour Brochures" />
+                <input type="text" value={itemForm.name} onChange={e => uf('name', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Tour Brochures" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Category *</label>
-                  <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Marketing" />
+                  <input type="text" value={itemForm.category} onChange={e => uf('category', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Marketing" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Unit *</label>
-                  <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., pcs" />
+                  <input type="text" value={itemForm.unit} onChange={e => uf('unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., pcs" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Quantity *</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
+                  <input type="number" value={itemForm.quantity} onChange={e => uf('quantity', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Unit Cost *</label>
-                  <input type="number" step="0.01" className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
+                  <input type="number" step="0.01" value={itemForm.unitCost} onChange={e => uf('unitCost', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Min Stock Level</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
+                  <input type="number" value={itemForm.minStockLevel} onChange={e => uf('minStockLevel', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Max Stock Level</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
+                  <input type="number" value={itemForm.maxStockLevel} onChange={e => uf('maxStockLevel', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Location</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Office - Shelf A" />
+                <input type="text" value={itemForm.location} onChange={e => uf('location', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Office - Shelf A" />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Item</button>
+              <button onClick={() => { setShowAddModal(false); setItemForm(emptyItemForm); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleAddItem} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Item</button>
             </div>
           </div>
         </div>
@@ -273,9 +324,10 @@ export default function Inventory() {
               <h2 className="text-xl font-bold">Inventory Transaction</h2>
             </div>
             <div className="p-6 space-y-4">
+              {txnItemId && <p className="text-sm text-gray-500">Item: <strong>{allItems.find(i => i.id === txnItemId)?.name}</strong></p>}
               <div>
                 <label className="block text-sm font-medium mb-1">Transaction Type *</label>
-                <select className="w-full px-3 py-2 border rounded-lg">
+                <select value={txnForm.type} onChange={e => tf('type', e.target.value)} className="w-full px-3 py-2 border rounded-lg">
                   <option>Stock In</option>
                   <option>Stock Out</option>
                   <option>Adjustment</option>
@@ -283,20 +335,20 @@ export default function Inventory() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
-                <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
+                <input type="number" value={txnForm.quantity} onChange={e => tf('quantity', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Reference</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="Optional" />
+                <input type="text" value={txnForm.reference} onChange={e => tf('reference', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Optional" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Notes</label>
-                <textarea className="w-full px-3 py-2 border rounded-lg h-20" placeholder="Notes..." />
+                <textarea value={txnForm.notes} onChange={e => tf('notes', e.target.value)} className="w-full px-3 py-2 border rounded-lg h-20" placeholder="Notes..." />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
-              <button onClick={() => setShowTransactionModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Record</button>
+              <button onClick={() => { setShowTransactionModal(false); setTxnForm(emptyTxnForm); setTxnItemId(null); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleTransaction} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Record</button>
             </div>
           </div>
         </div>

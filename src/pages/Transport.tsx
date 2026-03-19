@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Truck, Fuel, DollarSign, User, Plus, X, Save } from 'lucide-react';
 import type { Vehicle } from '../data/mockData';
-import { fetchVehicles, upsertVehicle } from '../lib/supabaseSync';
+import { fetchVehicles, upsertVehicle, fetchEmployees } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { catchAndReport } from '../lib/toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const vehicleTypes = ['Sedan', 'SUV', 'Luxury SUV', 'Van (14-seater)', 'Van (7-seater)', 'Bus (35-seater)', 'Bus (50-seater)', 'Coaster'];
 const statusOptions = ['Available', 'On Trip', 'Maintenance'];
-const driverOptions = ['Rajan Kumar', 'Ahmed Ali', 'John Mathew', 'Suresh Nair', 'Karim Hassan', 'David Lee', 'Mohammed Sultan'];
+// driverOptions loaded from DB inside component
 
 interface VehicleForm {
   plate: string;
@@ -20,6 +20,11 @@ interface VehicleForm {
 const emptyForm: VehicleForm = { plate: '', type: 'Sedan', driver: '', status: 'Available' };
 
 export default function Transport() {
+  const [driverOptions, setDriverOptions] = useState<string[]>([]);
+  useEffect(() => {
+    fetchEmployees().then(data => setDriverOptions(data.filter(e => e.status === 'Active').map(e => e.name))).catch(catchAndReport('Load drivers'));
+  }, []);
+
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<VehicleForm>(emptyForm);
   const [vehicleList, setVehicleList] = useState<Vehicle[]>([]);

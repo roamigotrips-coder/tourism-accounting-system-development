@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Tag, Plus, Edit2, Trash2, X, Save, Percent, DollarSign, CheckCircle, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useCurrency } from '../context/CurrencyContext';
 
 interface PriceList { id: string; name: string; type: 'sales' | 'purchase'; currency: string; markupPct: number; discountPct: number; isDefault: boolean; validFrom: string; validTo: string; status: 'Active' | 'Inactive'; }
 interface PriceListItem { id: string; priceListId: string; itemId: string; itemName: string; standardPrice: number; listPrice: number; markupPct: number; discountPct: number; }
@@ -8,6 +9,8 @@ interface CompositeItem { id: string; code: string; name: string; description: s
 interface CompositeComponent { id: string; compositeItemId: string; inventoryItemId: string; itemName: string; quantity: number; unitCost: number; }
 
 export default function PriceLists() {
+  const { currencies: allCurrencies } = useCurrency();
+  const currencyCodes = allCurrencies.filter(c => c.enabled).map(c => c.code);
   const [lists, setLists] = useState<PriceList[]>([]);
   const [items, setItems] = useState<PriceListItem[]>([]);
   const [composites, setComposites] = useState<CompositeItem[]>([]);
@@ -187,7 +190,7 @@ export default function PriceLists() {
               <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Name *</label><input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm" /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Type</label><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as any }))} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"><option value="sales">Sales</option><option value="purchase">Purchase</option></select></div>
-                <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Currency</label><select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"><option>AED</option><option>USD</option><option>EUR</option></select></div>
+                <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Currency</label><select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm">{currencyCodes.map(c => <option key={c}>{c}</option>)}</select></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Markup %</label><input type="number" value={form.markupPct} onChange={e => setForm(p => ({ ...p, markupPct: Number(e.target.value) }))} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm" /></div>

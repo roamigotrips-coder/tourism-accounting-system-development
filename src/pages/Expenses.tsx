@@ -5,7 +5,7 @@ import {
   Lock, ArrowRight, FileText, RefreshCw, Info,
   ChevronDown, ChevronUp, Send, Ban,
 } from 'lucide-react';
-import { fetchExpenses, upsertExpense } from '../lib/supabaseSync';
+import { fetchExpenses, upsertExpense, fetchSuppliers } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import AttachmentPanel from '../components/AttachmentPanel';
@@ -17,7 +17,7 @@ import { catchAndReport } from '../lib/toast';
 
 const categories = ['All', 'Fuel', 'Driver Salary', 'Hotel Payment', 'Activity Tickets', 'Office Rent', 'Marketing'];
 const paymentModes = ['Cash', 'Bank Transfer', 'Credit Card', 'Cheque', 'Online'];
-const supplierOptions = ['Desert Safari Adventures', 'Luxury Hotels Group', 'Gulf Transport Co.', 'Office Landlord', 'Media Agency', 'Internal', 'Other'];
+// supplierOptions loaded from DB inside component
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 
 interface ExpenseForm {
@@ -435,6 +435,11 @@ function AddExpenseModal({ onClose, onSave }: { onClose: () => void; onSave: (ex
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Expenses() {
+  const [supplierOptions, setSupplierOptions] = useState<string[]>(['Internal', 'Other']);
+  useEffect(() => {
+    fetchSuppliers().then(data => setSupplierOptions([...data.filter(s => s.status === 'Active').map(s => s.name), 'Internal', 'Other'])).catch(catchAndReport('Load suppliers'));
+  }, []);
+
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);

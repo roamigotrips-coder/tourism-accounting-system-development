@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FileText, AlertTriangle, CheckCircle, Plus, X, Save } from 'lucide-react';
-import { fetchVATRecords, upsertVATRecord } from '../lib/supabaseSync';
+import { fetchVATRecords, upsertVATRecord, fetchSetting, saveSetting } from '../lib/supabaseSync';
 import type { VATRecord } from '../data/mockData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
@@ -39,6 +39,11 @@ export default function VATTax() {
   }, []);
   const [trnInput, setTrnInput] = useState('100-1234-5678-90');
   const [editingTrn, setEditingTrn] = useState(false);
+
+  // Load TRN from DB
+  useEffect(() => {
+    fetchSetting('trn').then(v => { if (v) setTrnInput(v); }).catch(() => {});
+  }, []);
 
   const totalOutput = vatList.reduce((s, v) => s + v.outputVAT, 0);
   const totalInput = vatList.reduce((s, v) => s + v.inputVAT, 0);
@@ -89,7 +94,7 @@ export default function VATTax() {
                 <input value={trnInput} onChange={e => setTrnInput(e.target.value)}
                   className="bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg px-3 py-1 text-lg font-bold font-mono focus:outline-none"
                   placeholder="TRN Number" />
-                <button onClick={() => setEditingTrn(false)} className="bg-white text-blue-700 px-3 py-1 rounded-lg text-sm font-medium">Save</button>
+                <button onClick={() => { saveSetting('trn', trnInput).catch(catchAndReport('Save TRN')); setEditingTrn(false); }} className="bg-white text-blue-700 px-3 py-1 rounded-lg text-sm font-medium">Save</button>
               </div>
             ) : (
               <div className="flex items-center gap-3 mt-1">

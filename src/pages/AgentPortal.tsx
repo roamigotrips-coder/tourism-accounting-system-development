@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Download, FileText, CreditCard, BarChart3, Eye, Printer, X } from 'lucide-react';
-import { fetchEstimates, fetchInvoices } from '../lib/supabaseSync';
+import { fetchEstimates, fetchInvoices, fetchAgents } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { showToast } from '../lib/toast';
 import type { Invoice } from '../data/mockData';
 
 type Booking = {
@@ -152,12 +153,14 @@ export default function AgentPortal() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [agentNames, setAgentNames] = useState<string[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [estData, invData] = await Promise.all([fetchEstimates(), fetchInvoices()]);
+        const [estData, invData, agentData] = await Promise.all([fetchEstimates(), fetchInvoices(), fetchAgents()]);
         if (!cancelled) {
           if (estData) {
             setBookings(estData.map(e => ({
@@ -173,6 +176,11 @@ export default function AgentPortal() {
             })));
           }
           if (invData) setInvoices(invData);
+          if (agentData) {
+            const names = agentData.filter(a => a.status === 'Active').map(a => a.name);
+            setAgentNames(names);
+            if (names.length > 0) setSelectedAgent(names[0]);
+          }
         }
       } catch (e: any) {
         if (!cancelled) setError(e.message);
@@ -186,8 +194,8 @@ export default function AgentPortal() {
   if (loading) return <LoadingSpinner message="Loading..." />;
   if (error) return <ErrorBanner message={error} />;
 
-  const agentBookings = bookings.filter(b => b.agent === 'Global Tours UK');
-  const agentInvoices = invoices.filter(i => i.party === 'Global Tours UK');
+  const agentBookings = bookings.filter(b => b.agent === selectedAgent);
+  const agentInvoices = invoices.filter(i => i.party === selectedAgent);
   const outstanding = agentInvoices.filter(i => i.status !== 'Paid').reduce((s, i) => s + i.total, 0);
 
   return (
@@ -202,8 +210,12 @@ export default function AgentPortal() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <p className="text-emerald-100 text-sm">Welcome back</p>
-            <h2 className="text-2xl font-bold mt-1">Global Tours UK</h2>
-            <p className="text-emerald-100 text-sm mt-1">Agent ID: AG-001 | Credit: Net 30 | Outstanding: AED {outstanding.toLocaleString()}</p>
+            <div className="flex items-center gap-3 mt-1">
+              <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)} className="bg-white/20 text-white border border-white/30 rounded-lg px-3 py-1 text-xl font-bold focus:outline-none">
+                {agentNames.map(n => <option key={n} value={n} className="text-slate-800">{n}</option>)}
+              </select>
+            </div>
+            <p className="text-emerald-100 text-sm mt-1">Outstanding: AED {outstanding.toLocaleString()}</p>
           </div>
           <div className="flex gap-3">
             <button
@@ -212,7 +224,7 @@ export default function AgentPortal() {
             >
               <Download size={14} /> Download Statement
             </button>
-            <button className="bg-white text-emerald-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+            <button onClick={() => showToast('Online payment coming soon', 'warning')} className="bg-white text-emerald-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
               <CreditCard size={14} /> Make Payment
             </button>
           </div>
@@ -226,7 +238,7 @@ export default function AgentPortal() {
             <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center"><BarChart3 size={20} className="text-blue-600" /></div>
             <div>
               <p className="text-xs text-slate-500 uppercase">Total Bookings</p>
-              <p className="text-2xl font-bold text-slate-800">156</p>
+              <p className="text-2xl font-bold text-slate-800">{agentBookings.length}</p>
             </div>
           </div>
         </div>

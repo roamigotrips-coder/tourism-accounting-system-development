@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Download, Settings, MapPin, Calendar, TrendingDown, Shield } from 'lucide-react';
-import { fetchFixedAssets as fetchFixedAssetsDb, type FixedAsset } from '../lib/supabaseSync';
+import { fetchFixedAssets as fetchFixedAssetsDb, upsertFixedAsset, type FixedAsset } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { showToast, catchAndReport } from '../lib/toast';
 
 export default function FixedAssets() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,6 +14,40 @@ export default function FixedAssets() {
   const [allAssets, setAllAssets] = useState<FixedAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const emptyAssetForm = { code: '', name: '', category: '', description: '', location: '', purchaseDate: new Date().toISOString().slice(0, 10), purchasePrice: '', salvageValue: '', usefulLifeYears: '5', depreciationMethod: 'Straight Line' };
+  const [assetForm, setAssetForm] = useState(emptyAssetForm);
+  const af = (field: string, value: string) => setAssetForm(p => ({ ...p, [field]: value }));
+
+  const handleAddAsset = async () => {
+    if (!assetForm.code || !assetForm.name || !assetForm.purchasePrice) {
+      showToast('Please fill in required fields (Code, Name, Purchase Price)', 'error');
+      return;
+    }
+    const price = parseFloat(assetForm.purchasePrice) || 0;
+    const salvage = parseFloat(assetForm.salvageValue) || 0;
+    const asset: FixedAsset = {
+      id: crypto.randomUUID(),
+      code: assetForm.code,
+      name: assetForm.name,
+      category: assetForm.category || 'General',
+      description: assetForm.description,
+      location: assetForm.location,
+      purchaseDate: assetForm.purchaseDate,
+      purchasePrice: price,
+      salvageValue: salvage,
+      usefulLifeYears: parseInt(assetForm.usefulLifeYears) || 5,
+      depreciationMethod: assetForm.depreciationMethod,
+      accumulatedDepreciation: 0,
+      currentValue: price,
+      status: 'Active',
+    };
+    setAllAssets(prev => [asset, ...prev]);
+    setShowAddModal(false);
+    setAssetForm(emptyAssetForm);
+    showToast(`Asset ${asset.code} added`, 'success');
+    upsertFixedAsset(asset).catch(catchAndReport('Save fixed asset'));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -313,53 +348,59 @@ export default function FixedAssets() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Asset Code *</label>
-                  <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., VEH-001" />
+                  <input type="text" value={assetForm.code} onChange={e => af('code', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., VEH-001" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Category *</label>
-                  <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Vehicles" />
+                  <input type="text" value={assetForm.category} onChange={e => af('category', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Vehicles" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Asset Name *</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Toyota Hiace Van" />
+                <input type="text" value={assetForm.name} onChange={e => af('name', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Toyota Hiace Van" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Description</label>
-                <textarea className="w-full px-3 py-2 border rounded-lg h-20" placeholder="Description..." />
+                <textarea value={assetForm.description} onChange={e => af('description', e.target.value)} className="w-full px-3 py-2 border rounded-lg h-20" placeholder="Description..." />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Purchase Date</label>
+                  <input type="date" value={assetForm.purchaseDate} onChange={e => af('purchaseDate', e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Location</label>
+                  <input type="text" value={assetForm.location} onChange={e => af('location', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Parking Lot A" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Purchase Price *</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
+                  <input type="number" value={assetForm.purchasePrice} onChange={e => af('purchasePrice', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Salvage Value</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
+                  <input type="number" value={assetForm.salvageValue} onChange={e => af('salvageValue', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="0.00" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Useful Life (years) *</label>
-                  <input type="number" className="w-full px-3 py-2 border rounded-lg" placeholder="5" />
+                  <input type="number" value={assetForm.usefulLifeYears} onChange={e => af('usefulLifeYears', e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="5" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Depreciation Method</label>
-                  <select className="w-full px-3 py-2 border rounded-lg">
+                  <select value={assetForm.depreciationMethod} onChange={e => af('depreciationMethod', e.target.value)} className="w-full px-3 py-2 border rounded-lg">
                     <option>Straight Line</option>
                     <option>Declining Balance</option>
                     <option>Units of Production</option>
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Location</label>
-                <input type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Parking Lot A" />
-              </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Asset</button>
+              <button onClick={() => { setShowAddModal(false); setAssetForm(emptyAssetForm); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleAddAsset} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Asset</button>
             </div>
           </div>
         </div>

@@ -12,11 +12,12 @@ import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
 import { useAuditTrail } from '../context/AuditTrailContext';
 import { showToast, catchAndReport } from '../lib/toast';
+import { useCurrency } from '../context/CurrencyContext';
 
 
 const serviceTypes = ['All', 'Tour Package', 'Transfer', 'Hotel Booking', 'Visa Services', 'Tickets', 'Activities'];
 const paymentStatuses = ['Pending', 'Paid', 'Partial'];
-const currencies = ['AED', 'USD', 'EUR', 'GBP', 'INR'];
+// currencies loaded from CurrencyContext inside component
 // agentsList loaded from DB below
 
 interface CostingItem {
@@ -150,6 +151,8 @@ export default function Sales() {
   const { addEstimate, estimates, loading, error } = useBookingEstimates();
   const { publish } = useAutomation();
   const { logAction } = useAuditTrail();
+  const { currencies: allCurrencies } = useCurrency();
+  const currencies = allCurrencies.filter(c => c.enabled).map(c => c.code);
   const [sentToFinance, setSentToFinance] = useState(false);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');

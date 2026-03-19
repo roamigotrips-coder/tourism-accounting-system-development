@@ -9,7 +9,7 @@ import { showToast } from '../lib/toast';
 
 export default function MultiCurrency() {
   const { baseCurrency, setBaseCurrency, currencies, setCurrencies, rates, setRates, getRate } = useCurrency();
-  const { addJournalEntry } = useAccountingEngine();
+  const { addJournalEntry, saveDraft } = useAccountingEngine();
   const [showAddCurrency, setShowAddCurrency] = useState(false);
   const [showAddRate, setShowAddRate] = useState(false);
   const [revalDate, setRevalDate] = useState<string>(new Date().toISOString().slice(0, 10));
