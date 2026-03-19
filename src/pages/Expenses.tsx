@@ -13,6 +13,7 @@ import { useAttachments } from '../context/AttachmentsContext';
 import { useApproval } from '../context/ApprovalContext';
 import type { ApprovalItem } from '../context/ApprovalContext';
 import { routeApproval, getCFOThreshold, getWorkflowSteps } from '../utils/approvalThresholds';
+import { catchAndReport } from '../lib/toast';
 
 const categories = ['All', 'Fuel', 'Driver Salary', 'Hotel Payment', 'Activity Tickets', 'Office Rent', 'Marketing'];
 const paymentModes = ['Cash', 'Bank Transfer', 'Credit Card', 'Cheque', 'Online'];
@@ -777,7 +778,7 @@ export default function Expenses() {
           onClose={() => setShowModal(false)}
           onSave={exp => {
             setExpenseList(prev => [exp, ...prev]);
-            upsertExpense(exp as any).catch(() => {});
+            upsertExpense(exp as any).catch(catchAndReport('Save expense'));
             submitExpenseForApproval(exp);
             setShowModal(false);
           }}

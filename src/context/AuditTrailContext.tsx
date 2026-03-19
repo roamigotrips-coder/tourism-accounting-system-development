@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import { fetchAuditLogs as fetchAuditLogsDb, insertAuditLog as insertAuditLogDb } from '../lib/supabaseSync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ export function AuditTrailProvider({ children }: { children: ReactNode }) {
       metadata: params.metadata,
     };
     setLogs(prev => [entry, ...prev]);
-    insertAuditLogDb(entry).catch(() => {});
+    insertAuditLogDb(entry).catch(catchAndReport('Save audit log'));
     return entry;
   }, []);
 

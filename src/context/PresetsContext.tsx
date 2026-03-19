@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   fetchRolePresets as fetchRolePresetsDb,
   upsertRolePreset as upsertRolePresetDb,
@@ -57,7 +58,7 @@ export function PresetsProvider({ children }: { children: ReactNode }) {
         } else {
           // Seed defaults
           setPresets(DEFAULT_PRESETS);
-          upsertRolePresetsDb(DEFAULT_PRESETS).catch(() => {});
+          upsertRolePresetsDb(DEFAULT_PRESETS).catch(catchAndReport('Seed default role presets'));
         }
         setError(null);
       } catch (e: any) {
@@ -76,21 +77,21 @@ export function PresetsProvider({ children }: { children: ReactNode }) {
     const id = preset.name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
     const newPreset: RolePreset = { ...preset, id, isSystem: false };
     setPresets(prev => [...prev, newPreset]);
-    upsertRolePresetDb(newPreset).catch(() => {});
+    upsertRolePresetDb(newPreset).catch(catchAndReport('Add role preset'));
   };
 
   const updatePreset = (id: string, updates: Partial<RolePreset>) => {
     setPresets(prev => {
       const next = prev.map(p => p.id === id ? { ...p, ...updates } : p);
       const changed = next.find(p => p.id === id);
-      if (changed) upsertRolePresetDb(changed).catch(() => {});
+      if (changed) upsertRolePresetDb(changed).catch(catchAndReport('Update role preset'));
       return next;
     });
   };
 
   const deletePreset = (id: string) => {
     setPresets(prev => prev.filter(p => p.id !== id || p.isSystem));
-    deleteRolePresetDb(id).catch(() => {});
+    deleteRolePresetDb(id).catch(catchAndReport('Delete role preset'));
   };
 
   return (

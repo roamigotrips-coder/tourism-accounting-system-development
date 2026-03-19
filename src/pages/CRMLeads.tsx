@@ -3,6 +3,7 @@ import { Plus, Phone, Mail, ArrowRight, Search, X, Save } from 'lucide-react';
 import { fetchLeads, upsertLead } from '../lib/supabaseSync';
 import type { Lead } from '../data/mockData';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 const statuses = ['All', 'New', 'Contacted', 'Quoted', 'Converted', 'Lost'];
 const sources = ['Website', 'WhatsApp', 'Email', 'Walk-in', 'Travel Agent'];
@@ -93,7 +94,7 @@ export default function CRMLeads() {
       date: new Date().toISOString().split('T')[0],
     };
     setLeadList(prev => [newLead, ...prev] as typeof prev);
-    upsertLead(newLead).catch(() => {});
+    upsertLead(newLead).catch(catchAndReport('Save lead'));
     setForm(emptyForm);
     setShowModal(false);
   };
@@ -102,7 +103,7 @@ export default function CRMLeads() {
     setLeadList(prev => prev.map(l => {
       if (l.id === id) {
         const updated = { ...l, status: 'Converted' as const };
-        upsertLead(updated).catch(() => {});
+        upsertLead(updated).catch(catchAndReport('Convert lead'));
         return updated;
       }
       return l;

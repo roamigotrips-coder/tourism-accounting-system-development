@@ -6,6 +6,7 @@ import {
   type Project, type TimeEntry,
 } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 function minutesToHhmm(mins: number) {
   const h = Math.floor(mins / 60);
@@ -73,11 +74,11 @@ export default function Projects() {
     if (editingProject) {
       const updated = { ...(editingProject as Project), ...(pForm as Project) };
       setProjects(prev => prev.map(pp => pp.id === editingProject.id ? updated : pp));
-      upsertProjectDb(updated).catch(() => {});
+      upsertProjectDb(updated).catch(catchAndReport('Save project'));
     } else {
       const newProj: Project = { id: `PROJ-${Date.now()}`, name: pForm.name!, client: pForm.client||'', code: pForm.code||'', status: (pForm.status as any)||'Active', hourlyRate: Number(pForm.hourlyRate)||0, budgetHours: pForm.budgetHours ? Number(pForm.budgetHours) : undefined, createdAt: new Date().toISOString() };
       setProjects(prev => [...prev, newProj]);
-      upsertProjectDb(newProj).catch(() => {});
+      upsertProjectDb(newProj).catch(catchAndReport('Save project'));
     }
     setShowProjectModal(false);
   };
@@ -88,11 +89,11 @@ export default function Projects() {
     if (editingEntry) {
       const updated: TimeEntry = { ...(editingEntry as TimeEntry), ...(tForm as TimeEntry), durationMin: Number(tForm.durationMin) };
       setEntries(prev => prev.map(te => te.id === editingEntry.id ? updated : te));
-      upsertTimeEntryDb(updated).catch(() => {});
+      upsertTimeEntryDb(updated).catch(catchAndReport('Save time entry'));
     } else {
       const newEntry: TimeEntry = { id: `TE-${Date.now()}`, projectId: String(tForm.projectId), user: tForm.user||'Unassigned', date: String(tForm.date), notes: tForm.notes||'', durationMin: Number(tForm.durationMin)||0 };
       setEntries(prev => [...prev, newEntry]);
-      upsertTimeEntryDb(newEntry).catch(() => {});
+      upsertTimeEntryDb(newEntry).catch(catchAndReport('Save time entry'));
     }
     setShowEntryModal(false);
   };
@@ -100,11 +101,11 @@ export default function Projects() {
   const deleteProject = (id: string) => {
     if (entries.some(e => e.projectId === id)) return alert('Cannot delete: this project has time entries.');
     setProjects(prev => prev.filter(p => p.id !== id));
-    deleteProjectDb(id).catch(() => {});
+    deleteProjectDb(id).catch(catchAndReport('Delete project'));
   };
   const deleteEntry = (id: string) => {
     setEntries(prev => prev.filter(e => e.id !== id));
-    deleteTimeEntryDb(id).catch(() => {});
+    deleteTimeEntryDb(id).catch(catchAndReport('Delete time entry'));
   };
 
   if (loading) return <LoadingSpinner message="Loading projects..." />;

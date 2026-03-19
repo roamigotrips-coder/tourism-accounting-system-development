@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   fetchAccounts as fetchAccountsDb,
   upsertAccount as upsertAccountDb,
@@ -488,7 +489,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
       passwordHash: password ? btoa(password) : undefined,
     };
     setTransactionLockState(lock);
-    saveTransactionLockDb(lock).catch(() => {});
+    saveTransactionLockDb(lock).catch(catchAndReport('Save transaction lock'));
     addAudit({ userId: 'U1', userName: lockedBy, action: 'Transaction Lock Set', details: `Locked up to ${lockDate}`, module: 'Transaction Lock' } as any);
   }, [addAudit]);
 
@@ -500,7 +501,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     }
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Transaction Lock Cleared', details: `Was locked up to ${transactionLock.lockDate}`, module: 'Transaction Lock' } as any);
     setTransactionLockState(null);
-    clearTransactionLockDb().catch(() => {});
+    clearTransactionLockDb().catch(catchAndReport('Clear transaction lock'));
     return true;
   }, [transactionLock, addAudit]);
 
@@ -509,7 +510,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   const addAccount = useCallback((acc: Omit<Account, 'id' | 'createdAt'>): Account => {
     const newAcc: Account = { ...acc, id: `ACC-${Date.now()}`, createdAt: new Date().toISOString() };
     setAccounts(prev => [...prev, newAcc]);
-    upsertAccountDb(newAcc).catch(() => {});
+    upsertAccountDb(newAcc).catch(catchAndReport('Save account'));
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Created Account', details: `${newAcc.code} - ${newAcc.name}`, module: 'Chart of Accounts' } as any);
     return newAcc;
   }, [addAudit]);
@@ -518,7 +519,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     setAccounts(prev => {
       const updated = prev.map(a => a.id === id ? { ...a, ...changes } : a);
       const changedAcc = updated.find(a => a.id === id);
-      if (changedAcc) upsertAccountDb(changedAcc).catch(() => {});
+      if (changedAcc) upsertAccountDb(changedAcc).catch(catchAndReport('Update account'));
       return updated;
     });
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Updated Account', details: `Account ID: ${id}`, module: 'Chart of Accounts' } as any);
@@ -530,7 +531,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     setAccounts(prev => {
       const updated = prev.map(a => a.id === id ? { ...a, status: 'Inactive' as const } : a);
       const changedAcc = updated.find(a => a.id === id);
-      if (changedAcc) upsertAccountDb(changedAcc).catch(() => {});
+      if (changedAcc) upsertAccountDb(changedAcc).catch(catchAndReport('Update account'));
       return updated;
     });
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Deactivated Account', details: `Account ID: ${id}`, module: 'Chart of Accounts' } as any);
@@ -544,7 +545,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!period || period.status !== 'Open') return false;
     const updated = { ...period, status: 'Closed' as const, closedBy: userName, closedAt: new Date().toISOString() };
     setPeriods(prev => prev.map(p => p.id === periodId ? updated : p));
-    upsertPeriodDb(updated).catch(() => {});
+    upsertPeriodDb(updated).catch(catchAndReport('Close period'));
     addAudit({ userId: 'U1', userName, action: 'Closed Period', details: period.name, module: 'Accounting Periods' } as any);
     return true;
   }, [periods, addAudit]);
@@ -554,7 +555,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!period || period.status === 'Locked') return false;
     const updated = { ...period, status: 'Open' as const, closedBy: undefined, closedAt: undefined };
     setPeriods(prev => prev.map(p => p.id === periodId ? updated : p));
-    upsertPeriodDb(updated).catch(() => {});
+    upsertPeriodDb(updated).catch(catchAndReport('Reopen period'));
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Reopened Period', details: period?.name, module: 'Accounting Periods' } as any);
     return true;
   }, [periods, addAudit]);
@@ -562,7 +563,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
   const addPeriod = useCallback((p: Omit<AccountingPeriod, 'id'>) => {
     const newP: AccountingPeriod = { ...p, id: `P-${Date.now()}` };
     setPeriods(prev => [...prev, newP]);
-    upsertPeriodDb(newP).catch(() => {});
+    upsertPeriodDb(newP).catch(catchAndReport('Add period'));
   }, []);
 
   // ── Journal Entry actions ────────────────────────────────────────────────────
@@ -619,7 +620,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
       if (existing) return prev.map(e => e.id === je.id ? { ...je, status: existing.status === 'Draft' ? 'Draft' : existing.status } : e);
       return [...prev, je];
     });
-    upsertJournalEntryDb(je).catch(() => {});
+    upsertJournalEntryDb(je).catch(catchAndReport('Save journal entry draft'));
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Saved Draft', details: je.entryNumber, module: 'Journal Entries' } as any);
     return je;
   }, [nextEntryNumber, addAudit]);
@@ -633,7 +634,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Submitted for Approval', details: 'Sent to finance team' };
     const updated = { ...entry, status: 'Pending Approval' as const, submittedAt: now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntryDb(updated).catch(() => {});
+    upsertJournalEntryDb(updated).catch(catchAndReport('Submit journal entry for approval'));
     addAudit({ userId: 'U1', userName, action: 'Submitted for Approval', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, validateEntry, addAudit]);
@@ -645,7 +646,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Approved', details: 'Entry approved for posting' };
     const updated = { ...entry, status: 'Approved' as const, approvedBy: userName, approvedAt: now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntryDb(updated).catch(() => {});
+    upsertJournalEntryDb(updated).catch(catchAndReport('Approve journal entry'));
     addAudit({ userId: 'U1', userName, action: 'Approved Entry', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);
@@ -657,7 +658,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Rejected', details: reason };
     const updated = { ...entry, status: 'Rejected' as const, rejectedBy: userName, rejectedAt: now, rejectionReason: reason, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntryDb(updated).catch(() => {});
+    upsertJournalEntryDb(updated).catch(catchAndReport('Reject journal entry'));
     addAudit({ userId: 'U1', userName, action: 'Rejected Entry', details: `${entry.entryNumber}: ${reason}`, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);
@@ -672,7 +673,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Posted to General Ledger', details: 'Entry posted — GL and Trial Balance updated' };
     const updated = { ...entry, status: 'Posted' as const, postedAt: now, approvedBy: entry.approvedBy || userName, approvedAt: entry.approvedAt || now, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => prev.map(e => e.id === entryId ? updated : e));
-    upsertJournalEntryDb(updated).catch(() => {});
+    upsertJournalEntryDb(updated).catch(catchAndReport('Post journal entry'));
     addAudit({ userId: 'U1', userName, action: 'Posted Entry', details: entry.entryNumber, module: 'Journal Entries', newValue: 'Posted' } as any);
     return true;
   }, [entries, validateEntry, addAudit]);
@@ -701,8 +702,8 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     const auditEvent: AuditEvent = { id: `A-${Date.now()}`, timestamp: now, userId: 'U1', userName, action: 'Reversed', details: reason };
     const originalUpdated = { ...entry, status: 'Reversed' as EntryStatus, reversedBy: reversalEntry.id, auditLog: [...entry.auditLog, auditEvent] };
     setEntries(prev => [...prev.map(e => e.id === entryId ? originalUpdated : e), reversalEntry]);
-    upsertJournalEntryDb(originalUpdated).catch(() => {});
-    upsertJournalEntryDb(reversalEntry).catch(() => {});
+    upsertJournalEntryDb(originalUpdated).catch(catchAndReport('Update reversed journal entry'));
+    upsertJournalEntryDb(reversalEntry).catch(catchAndReport('Save reversal journal entry'));
     addAudit({ userId: 'U1', userName, action: 'Reversed Entry', details: `${entry.entryNumber} → ${reversalEntry.entryNumber}`, module: 'Journal Entries' } as any);
     return reversalEntry;
   }, [entries, addAudit]);
@@ -712,7 +713,7 @@ export function AccountingEngineProvider({ children }: { children: ReactNode }) 
     if (!entry || entry.status === 'Posted') return false;
     if (isTransactionLocked(entry.date)) return false;
     setEntries(prev => prev.filter(e => e.id !== entryId));
-    deleteJournalEntryDb(entryId).catch(() => {});
+    deleteJournalEntryDb(entryId).catch(catchAndReport('Delete journal entry'));
     addAudit({ userId: 'U1', userName: 'Current User', action: 'Deleted Entry', details: entry.entryNumber, module: 'Journal Entries' } as any);
     return true;
   }, [entries, addAudit]);

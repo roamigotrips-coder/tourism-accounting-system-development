@@ -5,6 +5,7 @@ import { fetchAgents, upsertAgent } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
+import { catchAndReport } from '../lib/toast';
 
 const countries = ['United Kingdom', 'Germany', 'France', 'India', 'USA', 'Australia', 'UAE', 'Singapore', 'Japan', 'China'];
 const paymentTermsList = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Advance', 'On Delivery'];
@@ -90,7 +91,7 @@ export default function Agents() {
           : a
       );
       const changedAgent = updated.find(a => a.id === agentId);
-      if (changedAgent) upsertAgent(changedAgent).catch(() => {});
+      if (changedAgent) upsertAgent(changedAgent).catch(catchAndReport('Save agent payment'));
       return updated;
     });
   };
@@ -111,7 +112,7 @@ export default function Agents() {
       totalBookings: 0,
     };
     setAgentList(prev => [newAgent, ...prev]);
-    upsertAgent(newAgent).catch(() => {});
+    upsertAgent(newAgent).catch(catchAndReport('Save agent'));
     setForm(emptyForm);
     setShowModal(false);
   };

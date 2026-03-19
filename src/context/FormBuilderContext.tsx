@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import { catchAndReport } from '../lib/toast';
 import type { FormConfiguration, FormField } from '../types/formBuilder';
 import {
   fetchFormConfigurations as fetchFormConfigurationsDb,
@@ -80,7 +81,7 @@ export function FormBuilderProvider({ children }: { children: React.ReactNode })
         } else {
           const defaults = getDefaultConfigs();
           setConfigurationsState(defaults);
-          upsertFormConfigurationsDb(defaults).catch(() => {});
+          upsertFormConfigurationsDb(defaults).catch(catchAndReport('Seed default form configurations'));
         }
         setError(null);
       } catch (e: any) {
@@ -108,21 +109,21 @@ export function FormBuilderProvider({ children }: { children: React.ReactNode })
 
   const syncConfig = (formId: string, configs: FormConfiguration[]) => {
     const config = configs.find(c => c.formId === formId);
-    if (config) upsertFormConfigurationDb(config).catch(() => {});
+    if (config) upsertFormConfigurationDb(config).catch(catchAndReport('Sync form configuration'));
   };
 
   const upsertConfiguration = (config: FormConfiguration) => {
     setConfigurationsState((prev) => {
       const exists = prev.some((c) => c.formId === config.formId);
       const next = exists ? prev.map((c) => (c.formId === config.formId ? config : c)) : [config, ...prev];
-      upsertFormConfigurationDb(config).catch(() => {});
+      upsertFormConfigurationDb(config).catch(catchAndReport('Save form configuration'));
       return next;
     });
   };
 
   const deleteConfiguration = (formId: string) => {
     setConfigurationsState((prev) => prev.filter((c) => c.formId !== formId));
-    deleteFormConfigurationDb(formId).catch(() => {});
+    deleteFormConfigurationDb(formId).catch(catchAndReport('Delete form configuration'));
   };
 
   const addField = (formId: string, field: FormField) => {

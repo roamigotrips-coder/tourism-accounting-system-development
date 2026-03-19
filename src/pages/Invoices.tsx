@@ -13,6 +13,7 @@ import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
 import { useApproval } from '../context/ApprovalContext';
+import { catchAndReport } from '../lib/toast';
 import AttachmentPanel from '../components/AttachmentPanel';
 import { useAttachments } from '../context/AttachmentsContext';
 import { useAuditTrail } from '../context/AuditTrailContext';
@@ -526,7 +527,7 @@ export default function Invoices() {
       notes: form.notes, items: form.items,
     };
     setInvoiceList(prev => [newInvoice, ...prev]);
-    upsertInvoice(newInvoice as any).catch(() => {});
+    upsertInvoice(newInvoice as any).catch(catchAndReport('Save invoice'));
     routeApproval(newInvoice.total, 'Invoice');
     ensureApprovalRequest({
       refNumber: newInvoice.id,
@@ -636,7 +637,7 @@ export default function Invoices() {
       fromEstimate: approved.bookingRef,
     };
     setInvoiceList(prev => [newInvoice, ...prev]);
-    upsertInvoice(newInvoice as any).catch(() => {});
+    upsertInvoice(newInvoice as any).catch(catchAndReport('Save invoice'));
     ensureApprovalRequest({
       refNumber: newInvoice.id,
       type: 'Invoice',

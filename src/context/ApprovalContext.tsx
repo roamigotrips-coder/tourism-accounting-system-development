@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import { getCFOThreshold, routeApproval } from '../utils/approvalThresholds';
 import {
   fetchApprovalItems as fetchApprovalItemsDb,
@@ -258,7 +259,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       // find changed items and sync them
       next.forEach(item => {
         const old = prev.find(p => p.id === item.id);
-        if (!old || old !== item) upsertApprovalItemDb(item).catch(() => {});
+        if (!old || old !== item) upsertApprovalItemDb(item).catch(catchAndReport('Update approval item'));
       });
       return next;
     });
@@ -283,7 +284,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       ],
     };
     setItems(prev => [newItem, ...prev]);
-    upsertApprovalItemDb(newItem).catch(() => {});
+    upsertApprovalItemDb(newItem).catch(catchAndReport('Submit approval item'));
     return id;
   }, []);
 
@@ -382,19 +383,19 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   const addRule = useCallback((rule: Omit<ApprovalRule, 'id' | 'createdAt'>) => {
     const newRule: ApprovalRule = { ...rule, id: `R${Date.now()}`, createdAt: new Date().toISOString().split('T')[0] };
     setRules(prev => [...prev, newRule]);
-    upsertApprovalRuleDb(newRule).catch(() => {});
+    upsertApprovalRuleDb(newRule).catch(catchAndReport('Add approval rule'));
   }, []);
   const updateRule = useCallback((id: string, update: Partial<ApprovalRule>) => {
     setRules(prev => {
       const next = prev.map(r => r.id === id ? { ...r, ...update } : r);
       const changed = next.find(r => r.id === id);
-      if (changed) upsertApprovalRuleDb(changed).catch(() => {});
+      if (changed) upsertApprovalRuleDb(changed).catch(catchAndReport('Update approval rule'));
       return next;
     });
   }, []);
   const deleteRule = useCallback((id: string) => {
     setRules(prev => prev.filter(r => r.id !== id));
-    deleteApprovalRuleDb(id).catch(() => {});
+    deleteApprovalRuleDb(id).catch(catchAndReport('Delete approval rule'));
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────

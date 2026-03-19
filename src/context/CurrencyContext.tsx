@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   fetchCurrencies as fetchCurrenciesDb,
   upsertCurrencies as upsertCurrenciesDb,
@@ -90,12 +91,12 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         else {
           // Seed defaults
           setCurrenciesState(DEFAULT_CURRENCIES);
-          upsertCurrenciesDb(DEFAULT_CURRENCIES).catch(() => {});
+          upsertCurrenciesDb(DEFAULT_CURRENCIES).catch(catchAndReport('Seed default currencies'));
         }
         if (rts !== null && rts.length > 0) setRatesState(rts);
         else {
           setRatesState(DEFAULT_RATES);
-          upsertCurrencyRatesDb(DEFAULT_RATES).catch(() => {});
+          upsertCurrencyRatesDb(DEFAULT_RATES).catch(catchAndReport('Seed default currency rates'));
         }
         setError(null);
       } catch (e: any) {
@@ -115,13 +116,13 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setBaseCurrency = (code: string) => {
     setBaseCurrencyState(code);
-    saveSetting('baseCurrency', code).catch(() => {});
+    saveSetting('baseCurrency', code).catch(catchAndReport('Save base currency'));
   };
 
   const setCurrencies: React.Dispatch<React.SetStateAction<Currency[]>> = (action) => {
     setCurrenciesState(prev => {
       const next = typeof action === 'function' ? action(prev) : action;
-      upsertCurrenciesDb(next).catch(() => {});
+      upsertCurrenciesDb(next).catch(catchAndReport('Save currencies'));
       return next;
     });
   };
@@ -129,7 +130,7 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setRates: React.Dispatch<React.SetStateAction<CurrencyRate[]>> = (action) => {
     setRatesState(prev => {
       const next = typeof action === 'function' ? action(prev) : action;
-      upsertCurrencyRatesDb(next).catch(() => {});
+      upsertCurrencyRatesDb(next).catch(catchAndReport('Save currency rates'));
       return next;
     });
   };

@@ -3,6 +3,7 @@
 // which approver role is required based on amount and document type.
 
 import { fetchSetting } from '../lib/supabaseSync';
+import { catchAndReport } from '../lib/toast';
 
 export interface ThresholdRule {
   id: string;
@@ -54,7 +55,7 @@ export async function loadCFOThreshold(): Promise<number> {
 export function getCFOThreshold(): number {
   if (!_thresholdLoaded) {
     // Fire-and-forget load on first call
-    loadCFOThreshold().catch(() => {});
+    loadCFOThreshold().catch(catchAndReport('Load CFO threshold'));
   }
   return _cachedThreshold;
 }

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   type BankConnection, type FeedTransaction, type SyncResult, type FeedSchedule,
   type WebhookEvent, simulateSync, calcNextSync,
@@ -116,14 +117,14 @@ export function BankFeedProvider({ children }: { children: ReactNode }) {
 
   const addConnection = useCallback((c: BankConnection) => {
     setConnections(prev => [...prev, c]);
-    upsertBankConnectionDb(c).catch(() => {});
+    upsertBankConnectionDb(c).catch(catchAndReport('Add bank connection'));
   }, []);
 
   const updateConnection = useCallback((id: string, updates: Partial<BankConnection>) => {
     setConnections(prev => {
       const next = prev.map(c => c.id === id ? { ...c, ...updates } : c);
       const changed = next.find(c => c.id === id);
-      if (changed) upsertBankConnectionDb(changed).catch(() => {});
+      if (changed) upsertBankConnectionDb(changed).catch(catchAndReport('Update bank connection'));
       return next;
     });
   }, []);
@@ -131,14 +132,14 @@ export function BankFeedProvider({ children }: { children: ReactNode }) {
   const removeConnection = useCallback((id: string) => {
     setConnections(prev => prev.filter(c => c.id !== id));
     setFeedTransactions(prev => prev.filter(t => t.connectionId !== id));
-    deleteBankConnectionDb(id).catch(() => {});
+    deleteBankConnectionDb(id).catch(catchAndReport('Delete bank connection'));
   }, []);
 
   const addFeedTransactions = useCallback((txs: FeedTransaction[]) => {
     setFeedTransactions(prev => {
       const existingIds = new Set(prev.map(t => t.id));
       const newTxs = txs.filter(t => !existingIds.has(t.id));
-      if (newTxs.length > 0) upsertFeedTransactionsDb(newTxs).catch(() => {});
+      if (newTxs.length > 0) upsertFeedTransactionsDb(newTxs).catch(catchAndReport('Save feed transactions'));
       return [...prev, ...newTxs];
     });
   }, []);
@@ -147,19 +148,19 @@ export function BankFeedProvider({ children }: { children: ReactNode }) {
     setFeedTransactions(prev => {
       const next = prev.map(t => t.id === id ? { ...t, ...updates } : t);
       const changed = next.find(t => t.id === id);
-      if (changed) upsertFeedTransactionDb(changed).catch(() => {});
+      if (changed) upsertFeedTransactionDb(changed).catch(catchAndReport('Update feed transaction'));
       return next;
     });
   }, []);
 
   const setBookTransactionsWrapper = useCallback((txs: BookTx[]) => {
     setBookTransactions(txs);
-    upsertBookTransactionsDb(txs).catch(() => {});
+    upsertBookTransactionsDb(txs).catch(catchAndReport('Save book transactions'));
   }, []);
 
   const setMatches = useCallback((m: RecMatch[]) => {
     setMatchesState(m);
-    upsertRecMatchesDb(m).catch(() => {});
+    upsertRecMatchesDb(m).catch(catchAndReport('Save reconciliation matches'));
   }, []);
 
   const updateSchedule = useCallback((connectionId: string, updates: Partial<FeedSchedule>) => {
@@ -169,18 +170,18 @@ export function BankFeedProvider({ children }: { children: ReactNode }) {
       if (exists) {
         updated = { ...exists, ...updates };
         const next = prev.map(s => s.connectionId === connectionId ? updated : s);
-        upsertFeedScheduleDb(updated).catch(() => {});
+        upsertFeedScheduleDb(updated).catch(catchAndReport('Update feed schedule'));
         return next;
       }
       updated = { connectionId, frequency: 'daily', lastRun: '', nextRun: '', enabled: true, retryCount: 0, maxRetries: 3, ...updates };
-      upsertFeedScheduleDb(updated).catch(() => {});
+      upsertFeedScheduleDb(updated).catch(catchAndReport('Add feed schedule'));
       return [...prev, updated];
     });
   }, []);
 
   const addWebhookEvent = useCallback((e: WebhookEvent) => {
     setWebhookEvents(prev => [e, ...prev].slice(0, 100));
-    insertWebhookEventDb(e).catch(() => {});
+    insertWebhookEventDb(e).catch(catchAndReport('Save webhook event'));
   }, []);
 
   const syncConnection = useCallback(async (connectionId: string) => {
@@ -229,7 +230,7 @@ export function BankFeedProvider({ children }: { children: ReactNode }) {
       }
 
       setSyncLogs(prev => [result, ...prev].slice(0, 50));
-      insertSyncLogDb(result).catch(() => {});
+      insertSyncLogDb(result).catch(catchAndReport('Save sync log'));
       setLastSyncTime(new Date().toISOString());
 
       updateConnection(connectionId, {

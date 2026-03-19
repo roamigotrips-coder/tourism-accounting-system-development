@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowRight, DollarSign, FileText, BookOpen, Check, AlertTriangle, Play, Eye, TrendingUp, Lock } from 'lucide-react';
 import { fetchCurrencyPostingDocs, upsertCurrencyPostingDoc, type CurrencyPostingDoc } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 const PIPELINE_STEPS = [
   { step: 1, label: 'Document', desc: 'Foreign currency amount', icon: FileText, color: 'bg-blue-500' },
@@ -49,7 +50,7 @@ export default function CurrencyPosting() {
           setTimeout(() => {
             const updatedDoc = { ...doc, status: 'posted' as const };
             setDocuments(prev => prev.map(d => d.id === doc.id ? updatedDoc : d));
-            upsertCurrencyPostingDoc(updatedDoc).catch(() => {});
+            upsertCurrencyPostingDoc(updatedDoc).catch(catchAndReport('Save currency posting'));
             setRunningPipeline(false);
             setPipelineStep(0);
           }, 800);

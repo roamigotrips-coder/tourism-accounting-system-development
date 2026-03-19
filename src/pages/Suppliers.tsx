@@ -3,6 +3,7 @@ import { Search, Plus, Upload, Bell, ArrowRight, X, Save } from 'lucide-react';
 import type { Supplier } from '../data/mockData';
 import { fetchSuppliers, upsertSupplier } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const supplierTypes = ['Hotel', 'Transport', 'Activity Provider', 'Tour Guide', 'Tickets', 'Visa Services'];
@@ -72,7 +73,7 @@ export default function Suppliers() {
       paidAmount: 0,
     };
     setSupplierList(prev => [newSupplier, ...prev] as typeof prev);
-    upsertSupplier(newSupplier as Supplier).catch(() => {});
+    upsertSupplier(newSupplier as Supplier).catch(catchAndReport('Save supplier'));
     setForm(emptyForm);
     setShowModal(false);
   };

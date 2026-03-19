@@ -5,6 +5,7 @@ import {
   type Retainer,
 } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 function nextDate(start: Date, interval: Retainer['interval']): Date {
   const d = new Date(start);
@@ -65,19 +66,19 @@ export default function Retainers() {
     };
     if (editing) setItems(prev => prev.map(i => i.id === editing.id ? obj : i));
     else setItems(prev => [obj, ...prev]);
-    upsertRetainerDb(obj).catch(() => {});
+    upsertRetainerDb(obj).catch(catchAndReport('Save retainer'));
     setShowModal(false);
   };
 
   const togglePause = (id: string) => setItems(prev => prev.map(i => {
     if (i.id !== id) return i;
     const updated = { ...i, status: (i.status === 'Paused' ? 'Active' : 'Paused') as Retainer['status'] };
-    upsertRetainerDb(updated).catch(() => {});
+    upsertRetainerDb(updated).catch(catchAndReport('Toggle retainer'));
     return updated;
   }));
   const remove = (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
-    deleteRetainerDb(id).catch(() => {});
+    deleteRetainerDb(id).catch(catchAndReport('Delete retainer'));
   };
 
   if (loading) return <LoadingSpinner message="Loading retainers..." />;

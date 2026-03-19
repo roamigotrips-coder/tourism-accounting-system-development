@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Play, Pause, RotateCcw, DollarSign, Users, Calendar, Check, X } from 'lucide-react';
 import { fetchRecurringProfiles, upsertRecurringProfile, type RecurringProfile } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 export default function RecurringProfiles() {
   const [profiles, setProfiles] = useState<RecurringProfile[]>([]);
@@ -63,7 +64,7 @@ export default function RecurringProfiles() {
       } : p);
       setProfiles(updated);
       const editedProfile = updated.find(p => p.id === editId);
-      if (editedProfile) upsertRecurringProfile(editedProfile).catch(() => {});
+      if (editedProfile) upsertRecurringProfile(editedProfile).catch(catchAndReport('Save recurring profile'));
     } else {
       const newProfile: RecurringProfile = {
         id: `RP-${String(profiles.length + 1).padStart(3, '0')}`,
@@ -84,7 +85,7 @@ export default function RecurringProfiles() {
         createdAt: new Date().toISOString().split('T')[0],
       };
       setProfiles(prev => [...prev, newProfile]);
-      upsertRecurringProfile(newProfile).catch(() => {});
+      upsertRecurringProfile(newProfile).catch(catchAndReport('Save recurring profile'));
     }
     resetForm();
   };
@@ -100,7 +101,7 @@ export default function RecurringProfiles() {
     setProfiles(prev => {
       const updated = prev.map(p => p.id === id ? { ...p, status: p.status === 'active' ? 'paused' as const : 'active' as const } : p);
       const toggled = updated.find(p => p.id === id);
-      if (toggled) upsertRecurringProfile(toggled).catch(() => {});
+      if (toggled) upsertRecurringProfile(toggled).catch(catchAndReport('Toggle recurring profile'));
       return updated;
     });
   };
@@ -109,7 +110,7 @@ export default function RecurringProfiles() {
     setProfiles(prev => {
       const updated = prev.map(p => p.id === id ? { ...p, status: 'cancelled' as const } : p);
       const cancelled = updated.find(p => p.id === id);
-      if (cancelled) upsertRecurringProfile(cancelled).catch(() => {});
+      if (cancelled) upsertRecurringProfile(cancelled).catch(catchAndReport('Cancel recurring profile'));
       return updated;
     });
   };

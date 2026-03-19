@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Settings, RefreshCw, Plus, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useCurrency } from '../context/CurrencyContext';
+import { useAccountingEngine } from '../context/AccountingEngine';
 import { fetchInvoices } from '../lib/supabaseSync';
 import type { Invoice } from '../data/mockData';
+import { catchAndReport } from '../lib/toast';
+import { showToast } from '../lib/toast';
 
 export default function MultiCurrency() {
   const { baseCurrency, setBaseCurrency, currencies, setCurrencies, rates, setRates, getRate } = useCurrency();
+  const { addJournalEntry } = useAccountingEngine();
   const [showAddCurrency, setShowAddCurrency] = useState(false);
   const [showAddRate, setShowAddRate] = useState(false);
   const [revalDate, setRevalDate] = useState<string>(new Date().toISOString().slice(0, 10));
@@ -27,7 +31,7 @@ export default function MultiCurrency() {
 
   const [invoicesCache, setInvoicesCache] = useState<Invoice[]>([]);
   useEffect(() => {
-    fetchInvoices().then(data => { if (data) setInvoicesCache(data); }).catch(() => {});
+    fetchInvoices().then(data => { if (data) setInvoicesCache(data); }).catch(catchAndReport('Load invoices'));
   }, []);
 
   const onRevalue = () => {
@@ -58,10 +62,47 @@ export default function MultiCurrency() {
 
   const postRevaluation = () => {
     if (revalPreview.length === 0) return;
-    // TODO: Create draft journal entry via AccountingEngine context instead of localStorage
-    // For now, just show a notification
     const totalDiff = revalPreview.reduce((s: number, r: any) => s + r.difference, 0);
-    alert(`Revaluation calculated: ${totalDiff >= 0 ? 'Gain' : 'Loss'} of AED ${Math.abs(totalDiff).toLocaleString()}. Create a draft journal entry in the Accounting module.`);
+    const isGain = totalDiff >= 0;
+    const absDiff = Math.abs(totalDiff);
+
+    const lines = [
+      {
+        id: `reval-dr-${Date.now()}`,
+        accountId: isGain ? 'acc-receivable' : 'fx-loss',
+        accountCode: isGain ? '1200' : '7200',
+        accountName: isGain ? 'Accounts Receivable' : 'FX Revaluation Loss',
+        accountType: isGain ? 'Asset' as const : 'Expense' as const,
+        description: `FX revaluation ${revalDate}`,
+        debit: absDiff,
+        credit: 0,
+      },
+      {
+        id: `reval-cr-${Date.now()}`,
+        accountId: isGain ? 'fx-gain' : 'acc-receivable',
+        accountCode: isGain ? '6200' : '1200',
+        accountName: isGain ? 'FX Revaluation Gain' : 'Accounts Receivable',
+        accountType: isGain ? 'Revenue' as const : 'Asset' as const,
+        description: `FX revaluation ${revalDate}`,
+        debit: 0,
+        credit: absDiff,
+      },
+    ];
+
+    const result = saveDraft({
+      date: revalDate,
+      description: `FX Revaluation — ${isGain ? 'Gain' : 'Loss'} of ${baseCurrency} ${absDiff.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      reference: `REVAL-${revalDate}`,
+      source: 'system' as const,
+      lines,
+    });
+
+    if (result) {
+      showToast(`Draft journal entry ${result.entryNumber} created for FX revaluation (${isGain ? 'Gain' : 'Loss'}: ${baseCurrency} ${absDiff.toLocaleString(undefined, { minimumFractionDigits: 2 })})`, 'success');
+      setRevalPreview([]);
+    } else {
+      showToast('Failed to create revaluation journal entry — check transaction lock or period status', 'error');
+    }
   };
 
   return (

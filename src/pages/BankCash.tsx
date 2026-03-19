@@ -3,6 +3,7 @@ import { Building2, Wallet, Globe, ArrowUpRight, ArrowDownRight, Plus, X, Save }
 import { fetchBankCashAccounts, fetchPayments, upsertPayment, fetchAgents, fetchSuppliers } from '../lib/supabaseSync';
 import type { BankAccount, Payment } from '../data/mockData';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 const transactionTypes = ['Receipt', 'Payment', 'Refund'];
 const paymentMethods = ['Bank Transfer', 'Card Payment', 'Cash', 'Cheque', 'Payment Link', 'Online'];
@@ -74,7 +75,7 @@ export default function BankCash() {
       status: 'Completed' as const,
     };
     setPaymentList(prev => [newPayment, ...prev]);
-    upsertPayment(newPayment).catch(() => {});
+    upsertPayment(newPayment).catch(catchAndReport('Save payment'));
     setForm(emptyForm);
     setShowModal(false);
   };

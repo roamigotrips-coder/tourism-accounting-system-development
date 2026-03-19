@@ -2,6 +2,8 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import Sidebar, { Page } from './components/Sidebar';
 import Breadcrumbs from './components/Breadcrumbs';
 import QuickActionFAB from './components/QuickActionFAB';
+import ToastContainer from './components/ToastContainer';
+import ConnectionStatus from './components/ConnectionStatus';
 import { PresetsProvider } from './context/PresetsContext';
 import { BookingEstimateProvider } from './context/BookingEstimateContext';
 import { AttachmentsProvider } from './context/AttachmentsContext';
@@ -271,6 +273,9 @@ export function App() {
                 />
               </button>
 
+              {/* Connection Status */}
+              <ConnectionStatus />
+
               {/* Divider */}
               <div className="w-px h-5 bg-slate-200 mx-1" />
 
@@ -302,6 +307,7 @@ export function App() {
           </div>
         </main>
         <QuickActionFAB onNavigate={setCurrentPage} />
+        <ToastContainer />
       </div>
     </AttachmentsProvider>
     </AutomationProvider>

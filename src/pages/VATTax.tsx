@@ -4,6 +4,7 @@ import { fetchVATRecords, upsertVATRecord } from '../lib/supabaseSync';
 import type { VATRecord } from '../data/mockData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 interface VATForm {
   period: string;
@@ -59,7 +60,7 @@ export default function VATTax() {
       status: form.status as 'Filed' | 'Pending' | 'Due',
     };
     setVatList(prev => [newRecord, ...prev]);
-    upsertVATRecord(newRecord).catch(() => {});
+    upsertVATRecord(newRecord).catch(catchAndReport('Save VAT record'));
     setForm(emptyForm);
     setShowModal(false);
   };

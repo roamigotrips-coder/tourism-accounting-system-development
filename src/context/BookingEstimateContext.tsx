@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { catchAndReport } from '../lib/toast';
 import { fetchEstimates as fetchEstimatesDb, upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
 
 export type EstimateStatus = 'Pending Approval' | 'Approved' | 'Rejected' | 'Invoiced';
@@ -90,7 +91,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
 
   const addEstimate = (estimate: BookingEstimate) => {
     setEstimates(prev => [estimate, ...prev]);
-    upsertEstimateDb(estimate).catch(() => {});
+    upsertEstimateDb(estimate).catch(catchAndReport('Add booking estimate'));
   };
 
   const approveEstimate = (id: string, approvedBy: string): BookingEstimate | null => {
@@ -98,7 +99,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         approved = { ...e, status: 'Approved', approvedBy, approvedAt: new Date().toISOString() };
-        upsertEstimateDb(approved).catch(() => {});
+        upsertEstimateDb(approved).catch(catchAndReport('Approve booking estimate'));
         return approved;
       }
       return e;
@@ -110,7 +111,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Rejected' as EstimateStatus, rejectedBy, rejectedAt: new Date().toISOString(), rejectionReason: reason };
-        upsertEstimateDb(updated).catch(() => {});
+        upsertEstimateDb(updated).catch(catchAndReport('Reject booking estimate'));
         return updated;
       }
       return e;
@@ -121,7 +122,7 @@ export function BookingEstimateProvider({ children }: { children: ReactNode }) {
     setEstimates(prev => prev.map(e => {
       if (e.id === id) {
         const updated = { ...e, status: 'Invoiced' as EstimateStatus, invoiceId };
-        upsertEstimateDb(updated).catch(() => {});
+        upsertEstimateDb(updated).catch(catchAndReport('Mark estimate as invoiced'));
         return updated;
       }
       return e;

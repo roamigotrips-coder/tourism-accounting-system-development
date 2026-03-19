@@ -4,6 +4,7 @@ import type { TourPackage } from '../data/mockData';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Package, TrendingUp, DollarSign, Plus, X, Save } from 'lucide-react';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 interface PackageForm {
   name: string;
@@ -84,7 +85,7 @@ export default function TourCosting() {
       bookings: 0,
     };
     setPackageList(prev => [newPackage, ...prev]);
-    upsertTourPackage(newPackage).catch(() => {});
+    upsertTourPackage(newPackage).catch(catchAndReport('Save tour package'));
     setForm(emptyForm);
     setShowModal(false);
   };

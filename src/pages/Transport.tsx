@@ -3,6 +3,7 @@ import { Truck, Fuel, DollarSign, User, Plus, X, Save } from 'lucide-react';
 import type { Vehicle } from '../data/mockData';
 import { fetchVehicles, upsertVehicle } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const vehicleTypes = ['Sedan', 'SUV', 'Luxury SUV', 'Van (14-seater)', 'Van (7-seater)', 'Bus (35-seater)', 'Bus (50-seater)', 'Coaster'];
@@ -72,7 +73,7 @@ export default function Transport() {
       revenue: 0,
     };
     setVehicleList(prev => [newVehicle, ...prev]);
-    upsertVehicle(newVehicle).catch(() => {});
+    upsertVehicle(newVehicle).catch(catchAndReport('Save vehicle'));
     setForm(emptyForm);
     setShowModal(false);
   };

@@ -11,6 +11,7 @@ import { fetchEmployees, upsertEmployee } from '../lib/supabaseSync';
 // Employee type from mockData used by supabaseSync internally
 import { usePresets } from '../context/PresetsContext';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 /* ─── Types ──────────────────────────────────────────────────── */
 type PermLevel = 'none' | 'view' | 'edit' | 'full';
@@ -439,7 +440,7 @@ export default function HRModule() {
       preset: form.selectedPreset,
     };
     setEmployeeList(prev => [newEmp, ...prev]);
-    upsertEmployee(newEmp).catch(() => {});
+    upsertEmployee(newEmp).catch(catchAndReport('Save employee'));
     setForm({ ...emptyForm, permissions: defaultPermissions() });
     setShowModal(false);
   };

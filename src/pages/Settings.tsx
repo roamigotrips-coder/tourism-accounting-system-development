@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { usePresets, PermLevel, RolePreset } from '../context/PresetsContext';
 import { fetchSetting, saveSetting } from '../lib/supabaseSync';
+import { catchAndReport } from '../lib/toast';
 
 /* ─── Constants ──────────────────────────────────────────── */
 const LEVELS: PermLevel[] = ['none', 'view', 'edit', 'full'];
@@ -624,7 +625,7 @@ export default function Settings() {
         const parsed = Number(amountRaw);
         if (Number.isFinite(parsed) && parsed > 0) setCfoThresholdAmount(parsed);
       }
-    })().catch(() => {});
+    })().catch(catchAndReport('Load approval settings'));
   }, []);
 
   const showSuccess = (msg: string) => {
@@ -682,8 +683,8 @@ export default function Settings() {
 
   const saveApprovalControls = () => {
     const safeAmount = Number.isFinite(cfoThresholdAmount) && cfoThresholdAmount > 0 ? cfoThresholdAmount : 5000;
-    saveSetting('accountspro.approval.fixedCfoThreshold', String(useFixedCfoThreshold)).catch(() => {});
-    saveSetting('accountspro.approval.cfoThresholdAmount', String(safeAmount)).catch(() => {});
+    saveSetting('accountspro.approval.fixedCfoThreshold', String(useFixedCfoThreshold)).catch(catchAndReport('Save CFO threshold toggle'));
+    saveSetting('accountspro.approval.cfoThresholdAmount', String(safeAmount)).catch(catchAndReport('Save CFO threshold amount'));
     setCfoThresholdAmount(safeAmount);
     showSuccess('Approval controls saved. CFO threshold updated.');
   };

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   fetchWorkflows as fetchWorkflowsDb,
   upsertWorkflow as upsertWorkflowDb,
@@ -76,21 +77,21 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
     const id = 'WF-' + Math.random().toString(36).slice(2, 8).toUpperCase();
     const newWf: Workflow = { ...w, id, createdAt: new Date().toISOString() };
     setWorkflows((prev) => [newWf, ...prev]);
-    upsertWorkflowDb(newWf).catch(() => {});
+    upsertWorkflowDb(newWf).catch(catchAndReport('Add workflow'));
   };
 
   const updateWorkflow = (id: string, patch: Partial<Workflow>) => {
     setWorkflows((prev) => {
       const next = prev.map(w => w.id === id ? { ...w, ...patch } : w);
       const changed = next.find(w => w.id === id);
-      if (changed) upsertWorkflowDb(changed).catch(() => {});
+      if (changed) upsertWorkflowDb(changed).catch(catchAndReport('Update workflow'));
       return next;
     });
   };
 
   const deleteWorkflow = (id: string) => {
     setWorkflows((prev) => prev.filter(w => w.id !== id));
-    deleteWorkflowDb(id).catch(() => {});
+    deleteWorkflowDb(id).catch(catchAndReport('Delete workflow'));
   };
 
   const passConditions = (evt: AutomationEvent, conditions: Condition[]) => {
@@ -123,7 +124,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
       if (message) {
         const entry = { id: crypto.randomUUID(), time: new Date().toISOString(), message };
         setLogs(prev => [entry, ...prev]);
-        insertAutomationLogDb(entry).catch(() => {});
+        insertAutomationLogDb(entry).catch(catchAndReport('Save automation log'));
       }
     });
   };

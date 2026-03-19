@@ -9,11 +9,27 @@ import type {
 } from '../context/AccountingEngine';
 import type { BookingEstimate } from '../context/BookingEstimateContext';
 
+/** Wraps a Supabase query and throws if the DB returns an error. */
+async function sbThrow<T>(query: PromiseLike<{ data: T; error: any }>): Promise<T> {
+  const { data, error } = await query;
+  if (error) throw error;
+  return data as T;
+}
+
 // ─── Connection test ──────────────────────────────────────────────────────────
 
 export async function testConnection(): Promise<boolean> {
-  const { error } = await supabase.from('accounts').select('id').limit(1);
-  return !error;
+  try {
+    // Try a lightweight RPC-free query; if accounts doesn't exist yet we also
+    // try a raw REST health check so the indicator still works before schema is applied.
+    const { error } = await supabase.from('accounts').select('id').limit(1);
+    if (!error) return true;
+    // Table may not exist yet — check if Supabase itself is reachable
+    const { error: e2 } = await supabase.from('app_settings').select('key').limit(1);
+    return !e2;
+  } catch {
+    return false;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -64,15 +80,15 @@ export async function fetchAccounts(): Promise<Account[] | null> {
 
 export async function upsertAccounts(accounts: Account[]): Promise<void> {
   if (accounts.length === 0) return;
-  await supabase.from('accounts').upsert(accounts.map(accountToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('accounts').upsert(accounts.map(accountToDb), { onConflict: 'id' }));
 }
 
 export async function upsertAccount(account: Account): Promise<void> {
-  await supabase.from('accounts').upsert(accountToDb(account), { onConflict: 'id' });
+  await sbThrow(supabase.from('accounts').upsert(accountToDb(account), { onConflict: 'id' }));
 }
 
 export async function deleteAccount(id: string): Promise<void> {
-  await supabase.from('accounts').delete().eq('id', id);
+  await sbThrow(supabase.from('accounts').delete().eq('id', id));
 }
 
 // ─── Journal Entries ──────────────────────────────────────────────────────────
@@ -173,20 +189,20 @@ export async function fetchJournalEntries(): Promise<JournalEntry[] | null> {
 }
 
 export async function upsertJournalEntry(je: JournalEntry): Promise<void> {
-  await supabase.from('journal_entries').upsert(entryToDb(je), { onConflict: 'id' });
-  await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', je.id);
+  await sbThrow(supabase.from('journal_entries').upsert(entryToDb(je), { onConflict: 'id' }));
+  await sbThrow(supabase.from('journal_entry_lines').delete().eq('journal_entry_id', je.id));
   if (je.lines.length > 0) {
-    await supabase.from('journal_entry_lines').insert(je.lines.map(l => lineToDb(l, je.id)));
+    await sbThrow(supabase.from('journal_entry_lines').insert(je.lines.map(l => lineToDb(l, je.id))));
   }
 }
 
 export async function upsertJournalEntries(entries: JournalEntry[]): Promise<void> {
   if (entries.length === 0) return;
-  await supabase.from('journal_entries').upsert(entries.map(entryToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('journal_entries').upsert(entries.map(entryToDb), { onConflict: 'id' }));
 }
 
 export async function deleteJournalEntry(id: string): Promise<void> {
-  await supabase.from('journal_entries').delete().eq('id', id);
+  await sbThrow(supabase.from('journal_entries').delete().eq('id', id));
 }
 
 // ─── Accounting Periods ───────────────────────────────────────────────────────
@@ -225,11 +241,11 @@ export async function fetchPeriods(): Promise<AccountingPeriod[] | null> {
 
 export async function upsertPeriods(periods: AccountingPeriod[]): Promise<void> {
   if (periods.length === 0) return;
-  await supabase.from('accounting_periods').upsert(periods.map(periodToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('accounting_periods').upsert(periods.map(periodToDb), { onConflict: 'id' }));
 }
 
 export async function upsertPeriod(p: AccountingPeriod): Promise<void> {
-  await supabase.from('accounting_periods').upsert(periodToDb(p), { onConflict: 'id' });
+  await sbThrow(supabase.from('accounting_periods').upsert(periodToDb(p), { onConflict: 'id' }));
 }
 
 // ─── Transaction Lock ─────────────────────────────────────────────────────────
@@ -247,18 +263,18 @@ export async function fetchTransactionLock(): Promise<TransactionLock | null> {
 }
 
 export async function saveTransactionLock(lock: TransactionLock): Promise<void> {
-  await supabase.from('transaction_lock').upsert({
+  await sbThrow(supabase.from('transaction_lock').upsert({
     id:            1,
     lock_date:     lock.lockDate,
     locked_by:     lock.lockedBy,
     locked_at:     lock.lockedAt,
     has_password:  lock.hasPassword,
     password_hash: lock.passwordHash ?? null,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
 }
 
 export async function clearTransactionLockDb(): Promise<void> {
-  await supabase.from('transaction_lock').delete().eq('id', 1);
+  await sbThrow(supabase.from('transaction_lock').delete().eq('id', 1));
 }
 
 // ─── Booking Estimates ────────────────────────────────────────────────────────
@@ -334,12 +350,12 @@ export async function fetchEstimates(): Promise<BookingEstimate[] | null> {
 }
 
 export async function upsertEstimate(e: BookingEstimate): Promise<void> {
-  await supabase.from('booking_estimates').upsert(estimateToDb(e), { onConflict: 'id' });
+  await sbThrow(supabase.from('booking_estimates').upsert(estimateToDb(e), { onConflict: 'id' }));
 }
 
 export async function upsertEstimates(estimates: BookingEstimate[]): Promise<void> {
   if (estimates.length === 0) return;
-  await supabase.from('booking_estimates').upsert(estimates.map(estimateToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('booking_estimates').upsert(estimates.map(estimateToDb), { onConflict: 'id' }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -459,21 +475,21 @@ export async function fetchApprovalItems(): Promise<ApprovalItem[] | null> {
 }
 
 export async function upsertApprovalItem(item: ApprovalItem): Promise<void> {
-  await supabase.from('approval_items').upsert(approvalItemToDb(item), { onConflict: 'id' });
-  await supabase.from('approval_history').delete().eq('item_id', item.id);
+  await sbThrow(supabase.from('approval_items').upsert(approvalItemToDb(item), { onConflict: 'id' }));
+  await sbThrow(supabase.from('approval_history').delete().eq('item_id', item.id));
   if (item.history.length > 0) {
-    await supabase.from('approval_history').insert(item.history.map(h => approvalHistoryToDb(h, item.id)));
+    await sbThrow(supabase.from('approval_history').insert(item.history.map(h => approvalHistoryToDb(h, item.id))));
   }
 }
 
 export async function upsertApprovalItems(items: ApprovalItem[]): Promise<void> {
   if (items.length === 0) return;
-  await supabase.from('approval_items').upsert(items.map(approvalItemToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('approval_items').upsert(items.map(approvalItemToDb), { onConflict: 'id' }));
   const allHistory = items.flatMap(item => item.history.map(h => approvalHistoryToDb(h, item.id)));
   if (allHistory.length > 0) {
     const itemIds = items.map(i => i.id);
-    await supabase.from('approval_history').delete().in('item_id', itemIds);
-    await supabase.from('approval_history').insert(allHistory);
+    await sbThrow(supabase.from('approval_history').delete().in('item_id', itemIds));
+    await sbThrow(supabase.from('approval_history').insert(allHistory));
   }
 }
 
@@ -513,15 +529,15 @@ export async function fetchApprovalRules(): Promise<ApprovalRule[] | null> {
 
 export async function upsertApprovalRules(rules: ApprovalRule[]): Promise<void> {
   if (rules.length === 0) return;
-  await supabase.from('approval_rules').upsert(rules.map(approvalRuleToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('approval_rules').upsert(rules.map(approvalRuleToDb), { onConflict: 'id' }));
 }
 
 export async function upsertApprovalRule(rule: ApprovalRule): Promise<void> {
-  await supabase.from('approval_rules').upsert(approvalRuleToDb(rule), { onConflict: 'id' });
+  await sbThrow(supabase.from('approval_rules').upsert(approvalRuleToDb(rule), { onConflict: 'id' }));
 }
 
 export async function deleteApprovalRuleDb(id: string): Promise<void> {
-  await supabase.from('approval_rules').delete().eq('id', id);
+  await sbThrow(supabase.from('approval_rules').delete().eq('id', id));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -587,12 +603,12 @@ export async function fetchAuditLogs(): Promise<AuditLog[] | null> {
 }
 
 export async function insertAuditLog(log: AuditLog): Promise<void> {
-  await supabase.from('audit_logs').insert(auditLogToDb(log));
+  await sbThrow(supabase.from('audit_logs').insert(auditLogToDb(log)));
 }
 
 export async function upsertAuditLogs(logs: AuditLog[]): Promise<void> {
   if (logs.length === 0) return;
-  await supabase.from('audit_logs').upsert(logs.map(auditLogToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('audit_logs').upsert(logs.map(auditLogToDb), { onConflict: 'id' }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -659,16 +675,16 @@ export async function fetchBankConnections(): Promise<BankConnection[] | null> {
 }
 
 export async function upsertBankConnection(c: BankConnection): Promise<void> {
-  await supabase.from('bank_connections').upsert(bankConnectionToDb(c), { onConflict: 'id' });
+  await sbThrow(supabase.from('bank_connections').upsert(bankConnectionToDb(c), { onConflict: 'id' }));
 }
 
 export async function upsertBankConnections(conns: BankConnection[]): Promise<void> {
   if (conns.length === 0) return;
-  await supabase.from('bank_connections').upsert(conns.map(bankConnectionToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('bank_connections').upsert(conns.map(bankConnectionToDb), { onConflict: 'id' }));
 }
 
 export async function deleteBankConnection(id: string): Promise<void> {
-  await supabase.from('bank_connections').delete().eq('id', id);
+  await sbThrow(supabase.from('bank_connections').delete().eq('id', id));
 }
 
 function dbToFeedTransaction(row: any): FeedTransaction {
@@ -731,11 +747,11 @@ export async function fetchFeedTransactions(): Promise<FeedTransaction[] | null>
 
 export async function upsertFeedTransactions(txs: FeedTransaction[]): Promise<void> {
   if (txs.length === 0) return;
-  await supabase.from('feed_transactions').upsert(txs.map(feedTransactionToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('feed_transactions').upsert(txs.map(feedTransactionToDb), { onConflict: 'id' }));
 }
 
 export async function upsertFeedTransaction(t: FeedTransaction): Promise<void> {
-  await supabase.from('feed_transactions').upsert(feedTransactionToDb(t), { onConflict: 'id' });
+  await sbThrow(supabase.from('feed_transactions').upsert(feedTransactionToDb(t), { onConflict: 'id' }));
 }
 
 function dbToBookTx(row: any): BookTx {
@@ -776,7 +792,7 @@ export async function fetchBookTransactions(): Promise<BookTx[] | null> {
 
 export async function upsertBookTransactions(txs: BookTx[]): Promise<void> {
   if (txs.length === 0) return;
-  await supabase.from('book_transactions').upsert(txs.map(bookTxToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('book_transactions').upsert(txs.map(bookTxToDb), { onConflict: 'id' }));
 }
 
 function dbToRecMatch(row: any): RecMatch {
@@ -819,11 +835,11 @@ export async function fetchRecMatches(): Promise<RecMatch[] | null> {
 
 export async function upsertRecMatches(matches: RecMatch[]): Promise<void> {
   if (matches.length === 0) return;
-  await supabase.from('rec_matches').upsert(matches.map(recMatchToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('rec_matches').upsert(matches.map(recMatchToDb), { onConflict: 'id' }));
 }
 
 export async function insertSyncLog(log: any): Promise<void> {
-  await supabase.from('sync_logs').insert({
+  await sbThrow(supabase.from('sync_logs').insert({
     id:               log.id || `SL-${Date.now()}`,
     connection_id:    log.connectionId,
     started_at:       log.startedAt,
@@ -833,7 +849,7 @@ export async function insertSyncLog(log: any): Promise<void> {
     auto_matched:     log.autoMatched ?? 0,
     errors:           log.errors ?? [],
     provider:         log.provider ?? null,
-  });
+  }));
 }
 
 export async function fetchFeedSchedules(): Promise<FeedSchedule[] | null> {
@@ -851,7 +867,7 @@ export async function fetchFeedSchedules(): Promise<FeedSchedule[] | null> {
 }
 
 export async function upsertFeedSchedule(s: FeedSchedule): Promise<void> {
-  await supabase.from('feed_schedules').upsert({
+  await sbThrow(supabase.from('feed_schedules').upsert({
     connection_id: s.connectionId,
     frequency:     s.frequency,
     last_run:      s.lastRun ?? null,
@@ -859,7 +875,7 @@ export async function upsertFeedSchedule(s: FeedSchedule): Promise<void> {
     enabled:       s.enabled,
     retry_count:   s.retryCount,
     max_retries:   s.maxRetries,
-  }, { onConflict: 'connection_id' });
+  }, { onConflict: 'connection_id' }));
 }
 
 export async function fetchWebhookEvents(): Promise<WebhookEvent[] | null> {
@@ -876,14 +892,14 @@ export async function fetchWebhookEvents(): Promise<WebhookEvent[] | null> {
 }
 
 export async function insertWebhookEvent(e: WebhookEvent): Promise<void> {
-  await supabase.from('webhook_events').insert({
+  await sbThrow(supabase.from('webhook_events').insert({
     id:            e.id,
     type:          e.type,
     connection_id: e.connectionId,
     payload:       e.payload,
     received_at:   e.receivedAt,
     processed:     e.processed,
-  });
+  }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -900,7 +916,7 @@ export async function fetchCurrencies(): Promise<Currency[] | null> {
 
 export async function upsertCurrencies(currencies: Currency[]): Promise<void> {
   if (currencies.length === 0) return;
-  await supabase.from('currencies').upsert(currencies.map(c => ({ code: c.code, symbol: c.symbol, name: c.name, enabled: c.enabled })), { onConflict: 'code' });
+  await sbThrow(supabase.from('currencies').upsert(currencies.map(c => ({ code: c.code, symbol: c.symbol, name: c.name, enabled: c.enabled })), { onConflict: 'code' }));
 }
 
 export async function fetchCurrencyRates(): Promise<CurrencyRate[] | null> {
@@ -911,7 +927,7 @@ export async function fetchCurrencyRates(): Promise<CurrencyRate[] | null> {
 
 export async function upsertCurrencyRates(rates: CurrencyRate[]): Promise<void> {
   if (rates.length === 0) return;
-  await supabase.from('currency_rates').upsert(rates.map(r => ({ code: r.code, rate: r.rate, date: r.date, source: r.source ?? 'Manual' })), { onConflict: 'code' });
+  await sbThrow(supabase.from('currency_rates').upsert(rates.map(r => ({ code: r.code, rate: r.rate, date: r.date, source: r.source ?? 'Manual' })), { onConflict: 'code' }));
 }
 
 export async function fetchSetting(key: string): Promise<string | null> {
@@ -920,7 +936,7 @@ export async function fetchSetting(key: string): Promise<string | null> {
 }
 
 export async function saveSetting(key: string, value: string): Promise<void> {
-  await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' });
+  await sbThrow(supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -936,16 +952,16 @@ export async function fetchWorkflows(): Promise<Workflow[] | null> {
 }
 
 export async function upsertWorkflow(w: Workflow): Promise<void> {
-  await supabase.from('workflows').upsert({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt }, { onConflict: 'id' });
+  await sbThrow(supabase.from('workflows').upsert({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt }, { onConflict: 'id' }));
 }
 
 export async function upsertWorkflows(workflows: Workflow[]): Promise<void> {
   if (workflows.length === 0) return;
-  await supabase.from('workflows').upsert(workflows.map(w => ({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt })), { onConflict: 'id' });
+  await sbThrow(supabase.from('workflows').upsert(workflows.map(w => ({ id: w.id, name: w.name, description: w.description ?? null, enabled: w.enabled, trigger: w.trigger, conditions: w.conditions, actions: w.actions, created_at: w.createdAt })), { onConflict: 'id' }));
 }
 
 export async function deleteWorkflowDb(id: string): Promise<void> {
-  await supabase.from('workflows').delete().eq('id', id);
+  await sbThrow(supabase.from('workflows').delete().eq('id', id));
 }
 
 export async function fetchAutomationLogs(): Promise<{ id: string; time: string; message: string }[] | null> {
@@ -955,7 +971,7 @@ export async function fetchAutomationLogs(): Promise<{ id: string; time: string;
 }
 
 export async function insertAutomationLog(log: { id: string; time: string; message: string }): Promise<void> {
-  await supabase.from('automation_logs').insert({ id: log.id, time: log.time, message: log.message });
+  await sbThrow(supabase.from('automation_logs').insert({ id: log.id, time: log.time, message: log.message }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1011,20 +1027,20 @@ export async function fetchAttachments(): Promise<Attachment[] | null> {
 }
 
 export async function upsertAttachment(a: Attachment): Promise<void> {
-  await supabase.from('attachments').upsert(attachmentToDb(a), { onConflict: 'id' });
-  await supabase.from('attachment_notes').delete().eq('attachment_id', a.id);
+  await sbThrow(supabase.from('attachments').upsert(attachmentToDb(a), { onConflict: 'id' }));
+  await sbThrow(supabase.from('attachment_notes').delete().eq('attachment_id', a.id));
   if (a.notes.length > 0) {
-    await supabase.from('attachment_notes').insert(a.notes.map(n => ({ id: n.id, attachment_id: a.id, text: n.text, created_at: n.createdAt, created_by: n.createdBy })));
+    await sbThrow(supabase.from('attachment_notes').insert(a.notes.map(n => ({ id: n.id, attachment_id: a.id, text: n.text, created_at: n.createdAt, created_by: n.createdBy }))));
   }
 }
 
 export async function upsertAttachments(attachments: Attachment[]): Promise<void> {
   if (attachments.length === 0) return;
-  await supabase.from('attachments').upsert(attachments.map(attachmentToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('attachments').upsert(attachments.map(attachmentToDb), { onConflict: 'id' }));
 }
 
 export async function deleteAttachmentDb(id: string): Promise<void> {
-  await supabase.from('attachments').delete().eq('id', id);
+  await sbThrow(supabase.from('attachments').delete().eq('id', id));
 }
 
 function dbToEmailRoute(row: any): EmailInRoute {
@@ -1043,15 +1059,15 @@ export async function fetchEmailRoutes(): Promise<EmailInRoute[] | null> {
 
 export async function upsertEmailRoutes(routes: EmailInRoute[]): Promise<void> {
   if (routes.length === 0) return;
-  await supabase.from('email_routes').upsert(routes.map(emailRouteToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('email_routes').upsert(routes.map(emailRouteToDb), { onConflict: 'id' }));
 }
 
 export async function upsertEmailRoute(route: EmailInRoute): Promise<void> {
-  await supabase.from('email_routes').upsert(emailRouteToDb(route), { onConflict: 'id' });
+  await sbThrow(supabase.from('email_routes').upsert(emailRouteToDb(route), { onConflict: 'id' }));
 }
 
 export async function deleteEmailRouteDb(id: string): Promise<void> {
-  await supabase.from('email_routes').delete().eq('id', id);
+  await sbThrow(supabase.from('email_routes').delete().eq('id', id));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1068,15 +1084,15 @@ export async function fetchRolePresets(): Promise<RolePreset[] | null> {
 
 export async function upsertRolePresets(presets: RolePreset[]): Promise<void> {
   if (presets.length === 0) return;
-  await supabase.from('role_presets').upsert(presets.map(p => ({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem })), { onConflict: 'id' });
+  await sbThrow(supabase.from('role_presets').upsert(presets.map(p => ({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem })), { onConflict: 'id' }));
 }
 
 export async function upsertRolePreset(p: RolePreset): Promise<void> {
-  await supabase.from('role_presets').upsert({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem }, { onConflict: 'id' });
+  await sbThrow(supabase.from('role_presets').upsert({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, color: p.color, permissions: p.permissions, is_system: p.isSystem }, { onConflict: 'id' }));
 }
 
 export async function deleteRolePresetDb(id: string): Promise<void> {
-  await supabase.from('role_presets').delete().eq('id', id);
+  await sbThrow(supabase.from('role_presets').delete().eq('id', id));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1092,16 +1108,16 @@ export async function fetchFormConfigurations(): Promise<FormConfiguration[] | n
 }
 
 export async function upsertFormConfiguration(config: FormConfiguration): Promise<void> {
-  await supabase.from('form_configurations').upsert({ form_id: config.formId, form_name: config.formName, form_description: config.formDescription ?? null, module: config.module, fields: config.fields }, { onConflict: 'form_id' });
+  await sbThrow(supabase.from('form_configurations').upsert({ form_id: config.formId, form_name: config.formName, form_description: config.formDescription ?? null, module: config.module, fields: config.fields }, { onConflict: 'form_id' }));
 }
 
 export async function upsertFormConfigurations(configs: FormConfiguration[]): Promise<void> {
   if (configs.length === 0) return;
-  await supabase.from('form_configurations').upsert(configs.map(c => ({ form_id: c.formId, form_name: c.formName, form_description: c.formDescription ?? null, module: c.module, fields: c.fields })), { onConflict: 'form_id' });
+  await sbThrow(supabase.from('form_configurations').upsert(configs.map(c => ({ form_id: c.formId, form_name: c.formName, form_description: c.formDescription ?? null, module: c.module, fields: c.fields })), { onConflict: 'form_id' }));
 }
 
 export async function deleteFormConfigurationDb(formId: string): Promise<void> {
-  await supabase.from('form_configurations').delete().eq('form_id', formId);
+  await sbThrow(supabase.from('form_configurations').delete().eq('form_id', formId));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1154,16 +1170,16 @@ export async function fetchAgents(): Promise<Agent[] | null> {
 }
 
 export async function upsertAgent(agent: Agent): Promise<void> {
-  await supabase.from('agents').upsert(agentToDb(agent), { onConflict: 'id' });
+  await sbThrow(supabase.from('agents').upsert(agentToDb(agent), { onConflict: 'id' }));
 }
 
 export async function upsertAgents(agents: Agent[]): Promise<void> {
   if (agents.length === 0) return;
-  await supabase.from('agents').upsert(agents.map(agentToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('agents').upsert(agents.map(agentToDb), { onConflict: 'id' }));
 }
 
 export async function deleteAgentDb(id: string): Promise<void> {
-  await supabase.from('agents').delete().eq('id', id);
+  await sbThrow(supabase.from('agents').delete().eq('id', id));
 }
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────
@@ -1201,16 +1217,16 @@ export async function fetchSuppliers(): Promise<Supplier[] | null> {
 }
 
 export async function upsertSupplier(supplier: Supplier): Promise<void> {
-  await supabase.from('suppliers').upsert(supplierToDb(supplier), { onConflict: 'id' });
+  await sbThrow(supabase.from('suppliers').upsert(supplierToDb(supplier), { onConflict: 'id' }));
 }
 
 export async function upsertSuppliers(suppliers: Supplier[]): Promise<void> {
   if (suppliers.length === 0) return;
-  await supabase.from('suppliers').upsert(suppliers.map(supplierToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('suppliers').upsert(suppliers.map(supplierToDb), { onConflict: 'id' }));
 }
 
 export async function deleteSupplierDb(id: string): Promise<void> {
-  await supabase.from('suppliers').delete().eq('id', id);
+  await sbThrow(supabase.from('suppliers').delete().eq('id', id));
 }
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
@@ -1248,16 +1264,16 @@ export async function fetchExpenses(): Promise<Expense[] | null> {
 }
 
 export async function upsertExpense(expense: Expense): Promise<void> {
-  await supabase.from('expenses').upsert(expenseToDb(expense), { onConflict: 'id' });
+  await sbThrow(supabase.from('expenses').upsert(expenseToDb(expense), { onConflict: 'id' }));
 }
 
 export async function upsertExpenses(expenses: Expense[]): Promise<void> {
   if (expenses.length === 0) return;
-  await supabase.from('expenses').upsert(expenses.map(expenseToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('expenses').upsert(expenses.map(expenseToDb), { onConflict: 'id' }));
 }
 
 export async function deleteExpenseDb(id: string): Promise<void> {
-  await supabase.from('expenses').delete().eq('id', id);
+  await sbThrow(supabase.from('expenses').delete().eq('id', id));
 }
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
@@ -1299,16 +1315,16 @@ export async function fetchInvoices(): Promise<Invoice[] | null> {
 }
 
 export async function upsertInvoice(invoice: Invoice): Promise<void> {
-  await supabase.from('invoices').upsert(invoiceToDb(invoice), { onConflict: 'id' });
+  await sbThrow(supabase.from('invoices').upsert(invoiceToDb(invoice), { onConflict: 'id' }));
 }
 
 export async function upsertInvoices(invoices: Invoice[]): Promise<void> {
   if (invoices.length === 0) return;
-  await supabase.from('invoices').upsert(invoices.map(invoiceToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('invoices').upsert(invoices.map(invoiceToDb), { onConflict: 'id' }));
 }
 
 export async function deleteInvoiceDb(id: string): Promise<void> {
-  await supabase.from('invoices').delete().eq('id', id);
+  await sbThrow(supabase.from('invoices').delete().eq('id', id));
 }
 
 // ─── Vehicles ─────────────────────────────────────────────────────────────────
@@ -1346,16 +1362,16 @@ export async function fetchVehicles(): Promise<Vehicle[] | null> {
 }
 
 export async function upsertVehicle(vehicle: Vehicle): Promise<void> {
-  await supabase.from('vehicles').upsert(vehicleToDb(vehicle), { onConflict: 'id' });
+  await sbThrow(supabase.from('vehicles').upsert(vehicleToDb(vehicle), { onConflict: 'id' }));
 }
 
 export async function upsertVehicles(vehicles: Vehicle[]): Promise<void> {
   if (vehicles.length === 0) return;
-  await supabase.from('vehicles').upsert(vehicles.map(vehicleToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('vehicles').upsert(vehicles.map(vehicleToDb), { onConflict: 'id' }));
 }
 
 export async function deleteVehicleDb(id: string): Promise<void> {
-  await supabase.from('vehicles').delete().eq('id', id);
+  await sbThrow(supabase.from('vehicles').delete().eq('id', id));
 }
 
 // ─── Tour Packages ────────────────────────────────────────────────────────────
@@ -1397,16 +1413,16 @@ export async function fetchTourPackages(): Promise<TourPackage[] | null> {
 }
 
 export async function upsertTourPackage(tp: TourPackage): Promise<void> {
-  await supabase.from('tour_packages').upsert(tourPackageToDb(tp), { onConflict: 'id' });
+  await sbThrow(supabase.from('tour_packages').upsert(tourPackageToDb(tp), { onConflict: 'id' }));
 }
 
 export async function upsertTourPackages(packages: TourPackage[]): Promise<void> {
   if (packages.length === 0) return;
-  await supabase.from('tour_packages').upsert(packages.map(tourPackageToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('tour_packages').upsert(packages.map(tourPackageToDb), { onConflict: 'id' }));
 }
 
 export async function deleteTourPackageDb(id: string): Promise<void> {
-  await supabase.from('tour_packages').delete().eq('id', id);
+  await sbThrow(supabase.from('tour_packages').delete().eq('id', id));
 }
 
 // ─── VAT Records ──────────────────────────────────────────────────────────────
@@ -1440,16 +1456,16 @@ export async function fetchVATRecords(): Promise<(VATRecord & { id?: string })[]
 }
 
 export async function upsertVATRecord(record: VATRecord & { id?: string }): Promise<void> {
-  await supabase.from('vat_records').upsert(vatRecordToDb(record), { onConflict: 'id' });
+  await sbThrow(supabase.from('vat_records').upsert(vatRecordToDb(record), { onConflict: 'id' }));
 }
 
 export async function upsertVATRecords(records: (VATRecord & { id?: string })[]): Promise<void> {
   if (records.length === 0) return;
-  await supabase.from('vat_records').upsert(records.map(vatRecordToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('vat_records').upsert(records.map(vatRecordToDb), { onConflict: 'id' }));
 }
 
 export async function deleteVATRecordDb(id: string): Promise<void> {
-  await supabase.from('vat_records').delete().eq('id', id);
+  await sbThrow(supabase.from('vat_records').delete().eq('id', id));
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
@@ -1491,16 +1507,16 @@ export async function fetchLeads(): Promise<Lead[] | null> {
 }
 
 export async function upsertLead(lead: Lead): Promise<void> {
-  await supabase.from('leads').upsert(leadToDb(lead), { onConflict: 'id' });
+  await sbThrow(supabase.from('leads').upsert(leadToDb(lead), { onConflict: 'id' }));
 }
 
 export async function upsertLeads(leads: Lead[]): Promise<void> {
   if (leads.length === 0) return;
-  await supabase.from('leads').upsert(leads.map(leadToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('leads').upsert(leads.map(leadToDb), { onConflict: 'id' }));
 }
 
 export async function deleteLeadDb(id: string): Promise<void> {
-  await supabase.from('leads').delete().eq('id', id);
+  await sbThrow(supabase.from('leads').delete().eq('id', id));
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────
@@ -1538,16 +1554,16 @@ export async function fetchEmployees(): Promise<Employee[] | null> {
 }
 
 export async function upsertEmployee(employee: Employee): Promise<void> {
-  await supabase.from('employees').upsert(employeeToDb(employee), { onConflict: 'id' });
+  await sbThrow(supabase.from('employees').upsert(employeeToDb(employee), { onConflict: 'id' }));
 }
 
 export async function upsertEmployees(employees: Employee[]): Promise<void> {
   if (employees.length === 0) return;
-  await supabase.from('employees').upsert(employees.map(employeeToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('employees').upsert(employees.map(employeeToDb), { onConflict: 'id' }));
 }
 
 export async function deleteEmployeeDb(id: string): Promise<void> {
-  await supabase.from('employees').delete().eq('id', id);
+  await sbThrow(supabase.from('employees').delete().eq('id', id));
 }
 
 // ─── Bank / Cash Accounts ─────────────────────────────────────────────────────
@@ -1581,16 +1597,16 @@ export async function fetchBankCashAccounts(): Promise<BankAccount[] | null> {
 }
 
 export async function upsertBankCashAccount(account: BankAccount): Promise<void> {
-  await supabase.from('bank_cash_accounts').upsert(bankAccountToDb(account), { onConflict: 'id' });
+  await sbThrow(supabase.from('bank_cash_accounts').upsert(bankAccountToDb(account), { onConflict: 'id' }));
 }
 
 export async function upsertBankCashAccounts(accounts: BankAccount[]): Promise<void> {
   if (accounts.length === 0) return;
-  await supabase.from('bank_cash_accounts').upsert(accounts.map(bankAccountToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('bank_cash_accounts').upsert(accounts.map(bankAccountToDb), { onConflict: 'id' }));
 }
 
 export async function deleteBankCashAccountDb(id: string): Promise<void> {
-  await supabase.from('bank_cash_accounts').delete().eq('id', id);
+  await sbThrow(supabase.from('bank_cash_accounts').delete().eq('id', id));
 }
 
 // ─── Payments Register ────────────────────────────────────────────────────────
@@ -1628,16 +1644,16 @@ export async function fetchPayments(): Promise<Payment[] | null> {
 }
 
 export async function upsertPayment(payment: Payment): Promise<void> {
-  await supabase.from('payments_register').upsert(paymentToDb(payment), { onConflict: 'id' });
+  await sbThrow(supabase.from('payments_register').upsert(paymentToDb(payment), { onConflict: 'id' }));
 }
 
 export async function upsertPayments(payments: Payment[]): Promise<void> {
   if (payments.length === 0) return;
-  await supabase.from('payments_register').upsert(payments.map(paymentToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('payments_register').upsert(payments.map(paymentToDb), { onConflict: 'id' }));
 }
 
 export async function deletePaymentDb(id: string): Promise<void> {
-  await supabase.from('payments_register').delete().eq('id', id);
+  await sbThrow(supabase.from('payments_register').delete().eq('id', id));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1697,16 +1713,16 @@ export async function fetchProjects(): Promise<Project[] | null> {
 }
 
 export async function upsertProject(project: Project): Promise<void> {
-  await supabase.from('projects').upsert(projectToDb(project), { onConflict: 'id' });
+  await sbThrow(supabase.from('projects').upsert(projectToDb(project), { onConflict: 'id' }));
 }
 
 export async function upsertProjects(projects: Project[]): Promise<void> {
   if (projects.length === 0) return;
-  await supabase.from('projects').upsert(projects.map(projectToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('projects').upsert(projects.map(projectToDb), { onConflict: 'id' }));
 }
 
 export async function deleteProjectDb(id: string): Promise<void> {
-  await supabase.from('projects').delete().eq('id', id);
+  await sbThrow(supabase.from('projects').delete().eq('id', id));
 }
 
 // ─── Time Entries ─────────────────────────────────────────────────────────────
@@ -1740,16 +1756,16 @@ export async function fetchTimeEntries(): Promise<TimeEntry[] | null> {
 }
 
 export async function upsertTimeEntry(entry: TimeEntry): Promise<void> {
-  await supabase.from('time_entries').upsert(timeEntryToDb(entry), { onConflict: 'id' });
+  await sbThrow(supabase.from('time_entries').upsert(timeEntryToDb(entry), { onConflict: 'id' }));
 }
 
 export async function upsertTimeEntries(entries: TimeEntry[]): Promise<void> {
   if (entries.length === 0) return;
-  await supabase.from('time_entries').upsert(entries.map(timeEntryToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('time_entries').upsert(entries.map(timeEntryToDb), { onConflict: 'id' }));
 }
 
 export async function deleteTimeEntryDb(id: string): Promise<void> {
-  await supabase.from('time_entries').delete().eq('id', id);
+  await sbThrow(supabase.from('time_entries').delete().eq('id', id));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1806,16 +1822,16 @@ export async function fetchRetainers(): Promise<Retainer[] | null> {
 }
 
 export async function upsertRetainer(retainer: Retainer): Promise<void> {
-  await supabase.from('retainers').upsert(retainerToDb(retainer), { onConflict: 'id' });
+  await sbThrow(supabase.from('retainers').upsert(retainerToDb(retainer), { onConflict: 'id' }));
 }
 
 export async function upsertRetainers(retainers: Retainer[]): Promise<void> {
   if (retainers.length === 0) return;
-  await supabase.from('retainers').upsert(retainers.map(retainerToDb), { onConflict: 'id' });
+  await sbThrow(supabase.from('retainers').upsert(retainers.map(retainerToDb), { onConflict: 'id' }));
 }
 
 export async function deleteRetainerDb(id: string): Promise<void> {
-  await supabase.from('retainers').delete().eq('id', id);
+  await sbThrow(supabase.from('retainers').delete().eq('id', id));
 }
 
 /* ─── PURCHASE ORDERS ──────────────────────────────────────── */
@@ -1881,28 +1897,28 @@ export async function fetchPurchaseOrders(): Promise<PurchaseOrder[] | null> {
 }
 
 export async function upsertPurchaseOrder(po: PurchaseOrder): Promise<void> {
-  await supabase.from('purchase_orders').upsert({
+  await sbThrow(supabase.from('purchase_orders').upsert({
     id: po.id, po_number: po.poNumber, supplier: po.supplier,
     supplier_type: po.supplierType, date: po.date, due_date: po.dueDate,
     subtotal: po.subtotal, vat: po.vat, total: po.total,
     currency: po.currency, status: po.status, payment_status: po.paymentStatus,
     linked_booking: po.linkedBooking ?? null, notes: po.notes ?? null,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   // Upsert items
   if (po.items.length > 0) {
-    await supabase.from('purchase_order_items').upsert(
+    await sbThrow(supabase.from('purchase_order_items').upsert(
       po.items.map(i => ({
         id: i.id, purchase_order_id: po.id,
         description: i.description, quantity: i.quantity,
         unit_price: i.unitPrice, total: i.total,
       })),
       { onConflict: 'id' }
-    );
+    ));
   }
 }
 
 export async function deletePurchaseOrderDb(id: string): Promise<void> {
-  await supabase.from('purchase_orders').delete().eq('id', id);
+  await sbThrow(supabase.from('purchase_orders').delete().eq('id', id));
 }
 
 /* ─── RECURRING BILLING ────────────────────────────────────── */
@@ -1949,11 +1965,11 @@ export async function fetchRecurringBilling(): Promise<RecurringBillingEntry[] |
 }
 
 export async function upsertRecurringBilling(entry: RecurringBillingEntry): Promise<void> {
-  await supabase.from('recurring_billing').upsert(recurringBillingToDb(entry), { onConflict: 'id' });
+  await sbThrow(supabase.from('recurring_billing').upsert(recurringBillingToDb(entry), { onConflict: 'id' }));
 }
 
 export async function deleteRecurringBillingDb(id: string): Promise<void> {
-  await supabase.from('recurring_billing').delete().eq('id', id);
+  await sbThrow(supabase.from('recurring_billing').delete().eq('id', id));
 }
 
 /* ─── RECURRING PROFILES ───────────────────────────────────── */
@@ -2007,11 +2023,11 @@ export async function fetchRecurringProfiles(): Promise<RecurringProfile[] | nul
 }
 
 export async function upsertRecurringProfile(profile: RecurringProfile): Promise<void> {
-  await supabase.from('recurring_profiles').upsert(recurringProfileToDb(profile), { onConflict: 'id' });
+  await sbThrow(supabase.from('recurring_profiles').upsert(recurringProfileToDb(profile), { onConflict: 'id' }));
 }
 
 export async function deleteRecurringProfileDb(id: string): Promise<void> {
-  await supabase.from('recurring_profiles').delete().eq('id', id);
+  await sbThrow(supabase.from('recurring_profiles').delete().eq('id', id));
 }
 
 /* ─── RECURRING INVOICES ───────────────────────────────────── */
@@ -2058,11 +2074,11 @@ export async function fetchRecurringInvoices(): Promise<RecurringInvoiceRecord[]
 }
 
 export async function upsertRecurringInvoice(inv: RecurringInvoiceRecord): Promise<void> {
-  await supabase.from('recurring_invoices').upsert(recurringInvoiceToDb(inv), { onConflict: 'id' });
+  await sbThrow(supabase.from('recurring_invoices').upsert(recurringInvoiceToDb(inv), { onConflict: 'id' }));
 }
 
 export async function deleteRecurringInvoiceDb(id: string): Promise<void> {
-  await supabase.from('recurring_invoices').delete().eq('id', id);
+  await sbThrow(supabase.from('recurring_invoices').delete().eq('id', id));
 }
 
 /* ─── INVENTORY ITEMS ──────────────────────────────────────── */
@@ -2111,11 +2127,11 @@ export async function fetchInventoryItems(): Promise<InventoryItem[] | null> {
 }
 
 export async function upsertInventoryItem(item: InventoryItem): Promise<void> {
-  await supabase.from('inventory_items').upsert(inventoryItemToDb(item), { onConflict: 'id' });
+  await sbThrow(supabase.from('inventory_items').upsert(inventoryItemToDb(item), { onConflict: 'id' }));
 }
 
 export async function deleteInventoryItemDb(id: string): Promise<void> {
-  await supabase.from('inventory_items').delete().eq('id', id);
+  await sbThrow(supabase.from('inventory_items').delete().eq('id', id));
 }
 
 /* ─── FIXED ASSETS ─────────────────────────────────────────── */
@@ -2177,11 +2193,11 @@ export async function fetchFixedAssets(): Promise<FixedAsset[] | null> {
 }
 
 export async function upsertFixedAsset(asset: FixedAsset): Promise<void> {
-  await supabase.from('fixed_assets').upsert(fixedAssetToDb(asset), { onConflict: 'id' });
+  await sbThrow(supabase.from('fixed_assets').upsert(fixedAssetToDb(asset), { onConflict: 'id' }));
 }
 
 export async function deleteFixedAssetDb(id: string): Promise<void> {
-  await supabase.from('fixed_assets').delete().eq('id', id);
+  await sbThrow(supabase.from('fixed_assets').delete().eq('id', id));
 }
 
 /* ─── CURRENCY POSTING DOCS ────────────────────────────────── */
@@ -2227,11 +2243,11 @@ export async function fetchCurrencyPostingDocs(): Promise<CurrencyPostingDoc[] |
 }
 
 export async function upsertCurrencyPostingDoc(doc: CurrencyPostingDoc): Promise<void> {
-  await supabase.from('currency_posting_docs').upsert(currencyPostingDocToDb(doc), { onConflict: 'id' });
+  await sbThrow(supabase.from('currency_posting_docs').upsert(currencyPostingDocToDb(doc), { onConflict: 'id' }));
 }
 
 export async function deleteCurrencyPostingDocDb(id: string): Promise<void> {
-  await supabase.from('currency_posting_docs').delete().eq('id', id);
+  await sbThrow(supabase.from('currency_posting_docs').delete().eq('id', id));
 }
 
 /* ─── SUPPLIER AUTOMATION RULES ────────────────────────────── */
@@ -2259,10 +2275,10 @@ export async function fetchSupplierAutomationRules(): Promise<SupplierAutomation
 }
 
 export async function upsertSupplierAutomationRule(rule: SupplierAutomationRule): Promise<void> {
-  await supabase.from('supplier_automation_rules').upsert({
+  await sbThrow(supabase.from('supplier_automation_rules').upsert({
     id: rule.id, name: rule.name, supplier: rule.supplier,
     status: rule.status, last_run: rule.lastRun, matches: rule.matches,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
 }
 
 /* ─── SUPPLIER PENDING INVOICES ────────────────────────────── */
@@ -2290,10 +2306,10 @@ export async function fetchSupplierPendingInvoices(): Promise<SupplierPendingInv
 }
 
 export async function upsertSupplierPendingInvoice(inv: SupplierPendingInvoice): Promise<void> {
-  await supabase.from('supplier_pending_invoices').upsert({
+  await sbThrow(supabase.from('supplier_pending_invoices').upsert({
     id: inv.id, supplier: inv.supplier, amount: inv.amount,
     bookings: inv.bookings, status: inv.status, upload_date: inv.uploadDate,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2365,25 +2381,25 @@ export async function fetchQuotes(): Promise<Quote[] | null> {
 }
 
 export async function upsertQuote(q: Quote): Promise<void> {
-  await supabase.from('quotes').upsert({
+  await sbThrow(supabase.from('quotes').upsert({
     id: q.id, quote_number: q.quoteNumber, customer: q.customer, agent: q.agent ?? null,
     date: q.date, expiry_date: q.expiryDate, status: q.status, subtotal: q.subtotal,
     discount_pct: q.discountPct, vat: q.vat, total: q.total, currency: q.currency,
     notes: q.notes ?? null, terms: q.terms ?? null,
     converted_to_so: q.convertedToSo ?? null, converted_to_inv: q.convertedToInv ?? null,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   // Upsert items
   if (q.items.length > 0) {
-    await supabase.from('quote_items').upsert(q.items.map(i => ({
+    await sbThrow(supabase.from('quote_items').upsert(q.items.map(i => ({
       id: i.id, quote_id: i.quoteId, description: i.description,
       quantity: i.quantity, unit_price: i.unitPrice, discount_pct: i.discountPct,
       tax_rate: i.taxRate, total: i.total,
-    })), { onConflict: 'id' });
+    })), { onConflict: 'id' }));
   }
 }
 
 export async function deleteQuote(id: string): Promise<void> {
-  await supabase.from('quotes').delete().eq('id', id);
+  await sbThrow(supabase.from('quotes').delete().eq('id', id));
 }
 
 /* ─── SALES ORDERS ────────────────────────────────────────── */
@@ -2448,23 +2464,23 @@ export async function fetchSalesOrders(): Promise<SalesOrder[] | null> {
 }
 
 export async function upsertSalesOrder(so: SalesOrder): Promise<void> {
-  await supabase.from('sales_orders').upsert({
+  await sbThrow(supabase.from('sales_orders').upsert({
     id: so.id, so_number: so.soNumber, customer: so.customer, agent: so.agent ?? null,
     date: so.date, delivery_date: so.deliveryDate ?? null, status: so.status,
     subtotal: so.subtotal, vat: so.vat, total: so.total, currency: so.currency,
     quote_id: so.quoteId ?? null, invoice_id: so.invoiceId ?? null, notes: so.notes ?? null,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (so.items.length > 0) {
-    await supabase.from('sales_order_items').upsert(so.items.map(i => ({
+    await sbThrow(supabase.from('sales_order_items').upsert(so.items.map(i => ({
       id: i.id, sales_order_id: i.salesOrderId, description: i.description,
       quantity: i.quantity, unit_price: i.unitPrice, discount_pct: i.discountPct,
       tax_rate: i.taxRate, total: i.total,
-    })), { onConflict: 'id' });
+    })), { onConflict: 'id' }));
   }
 }
 
 export async function deleteSalesOrder(id: string): Promise<void> {
-  await supabase.from('sales_orders').delete().eq('id', id);
+  await sbThrow(supabase.from('sales_orders').delete().eq('id', id));
 }
 
 /* ─── CREDIT NOTES ────────────────────────────────────────── */
@@ -2525,24 +2541,24 @@ export async function fetchCreditNotes(): Promise<CreditNote[] | null> {
 }
 
 export async function upsertCreditNote(cn: CreditNote): Promise<void> {
-  await supabase.from('credit_notes').upsert({
+  await sbThrow(supabase.from('credit_notes').upsert({
     id: cn.id, cn_number: cn.cnNumber, type: cn.type,
     invoice_id: cn.invoiceId ?? null, customer: cn.customer,
     date: cn.date, reason: cn.reason, subtotal: cn.subtotal,
     vat: cn.vat, total: cn.total, currency: cn.currency,
     status: cn.status, refund_status: cn.refundStatus,
     refund_amount: cn.refundAmount,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (cn.items.length > 0) {
-    await supabase.from('credit_note_items').upsert(cn.items.map(i => ({
+    await sbThrow(supabase.from('credit_note_items').upsert(cn.items.map(i => ({
       id: i.id, credit_note_id: i.creditNoteId, description: i.description,
       quantity: i.quantity, unit_price: i.unitPrice, total: i.total,
-    })), { onConflict: 'id' });
+    })), { onConflict: 'id' }));
   }
 }
 
 export async function deleteCreditNote(id: string): Promise<void> {
-  await supabase.from('credit_notes').delete().eq('id', id);
+  await sbThrow(supabase.from('credit_notes').delete().eq('id', id));
 }
 
 /* ─── BILLS ───────────────────────────────────────────────── */
@@ -2609,7 +2625,7 @@ export async function fetchBills(): Promise<Bill[] | null> {
 }
 
 export async function upsertBill(b: Bill): Promise<void> {
-  await supabase.from('bills').upsert({
+  await sbThrow(supabase.from('bills').upsert({
     id: b.id, bill_number: b.billNumber, vendor: b.vendor,
     vendor_bill_ref: b.vendorBillRef ?? null, date: b.date,
     due_date: b.dueDate, status: b.status, subtotal: b.subtotal,
@@ -2617,16 +2633,16 @@ export async function upsertBill(b: Bill): Promise<void> {
     amount_paid: b.amountPaid, purchase_order_id: b.purchaseOrderId ?? null,
     recurring: b.recurring, recurring_profile_id: b.recurringProfileId ?? null,
     notes: b.notes ?? null,
-  }, { onConflict: 'id' });
+  }, { onConflict: 'id' }));
   if (b.items.length > 0) {
-    await supabase.from('bill_items').upsert(b.items.map(i => ({
+    await sbThrow(supabase.from('bill_items').upsert(b.items.map(i => ({
       id: i.id, bill_id: i.billId, description: i.description,
       account_id: i.accountId ?? null, quantity: i.quantity,
       unit_price: i.unitPrice, tax_rate: i.taxRate, total: i.total,
-    })), { onConflict: 'id' });
+    })), { onConflict: 'id' }));
   }
 }
 
 export async function deleteBill(id: string): Promise<void> {
-  await supabase.from('bills').delete().eq('id', id);
+  await sbThrow(supabase.from('bills').delete().eq('id', id));
 }

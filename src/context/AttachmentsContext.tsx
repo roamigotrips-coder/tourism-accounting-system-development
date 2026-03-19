@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { catchAndReport } from '../lib/toast';
 import {
   fetchAttachments as fetchAttachmentsDb,
   upsertAttachment as upsertAttachmentDb,
@@ -126,20 +127,20 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       version: 1,
     };
     setAttachments(prev => [full, ...prev]);
-    upsertAttachmentDb(full).catch(() => {});
+    upsertAttachmentDb(full).catch(catchAndReport('Save attachment'));
     return full;
   };
 
   const removeAttachment = (id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
-    deleteAttachmentDb(id).catch(() => {});
+    deleteAttachmentDb(id).catch(catchAndReport('Delete attachment'));
   };
 
   const updateAttachment = (id: string, patch: Partial<Attachment>) => {
     setAttachments(prev => {
       const next = prev.map(a => a.id === id ? { ...a, ...patch } : a);
       const changed = next.find(a => a.id === id);
-      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      if (changed) upsertAttachmentDb(changed).catch(catchAndReport('Update attachment'));
       return next;
     });
   };
@@ -150,7 +151,7 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setAttachments(prev => {
       const next = prev.map(a => a.id === attachmentId ? { ...a, notes: [...a.notes, note] } : a);
       const changed = next.find(a => a.id === attachmentId);
-      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      if (changed) upsertAttachmentDb(changed).catch(catchAndReport('Add attachment note'));
       return next;
     });
   };
@@ -159,7 +160,7 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setAttachments(prev => {
       const next = prev.map(a => a.id === attachmentId ? { ...a, notes: a.notes.filter(n => n.id !== noteId) } : a);
       const changed = next.find(a => a.id === attachmentId);
-      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      if (changed) upsertAttachmentDb(changed).catch(catchAndReport('Remove attachment note'));
       return next;
     });
   };
@@ -169,7 +170,7 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setAttachments(prev => {
       const next = prev.map(a => a.id === attachmentId && !a.tags.includes(tag) ? { ...a, tags: [...a.tags, tag] } : a);
       const changed = next.find(a => a.id === attachmentId);
-      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      if (changed) upsertAttachmentDb(changed).catch(catchAndReport('Add attachment tag'));
       return next;
     });
   };
@@ -178,7 +179,7 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setAttachments(prev => {
       const next = prev.map(a => a.id === attachmentId ? { ...a, tags: a.tags.filter(t => t !== tag) } : a);
       const changed = next.find(a => a.id === attachmentId);
-      if (changed) upsertAttachmentDb(changed).catch(() => {});
+      if (changed) upsertAttachmentDb(changed).catch(catchAndReport('Remove attachment tag'));
       return next;
     });
   };
@@ -190,12 +191,12 @@ export const AttachmentsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // ── Email routes ──────────────────────────────────────────────────────────
   const upsertEmailRoute = (route: EmailInRoute) => {
     setEmailRoutes(prev => prev.some(r => r.id === route.id) ? prev.map(r => r.id === route.id ? route : r) : [...prev, route]);
-    upsertEmailRouteDb(route).catch(() => {});
+    upsertEmailRouteDb(route).catch(catchAndReport('Save email route'));
   };
 
   const deleteEmailRoute = (id: string) => {
     setEmailRoutes(prev => prev.filter(r => r.id !== id));
-    deleteEmailRouteDb(id).catch(() => {});
+    deleteEmailRouteDb(id).catch(catchAndReport('Delete email route'));
   };
 
   const simulateEmailIn = (routeId: string, module: AttachmentModule, documentId: string): Attachment | null => {

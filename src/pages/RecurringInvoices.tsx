@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, FileText, DollarSign, AlertTriangle, Check, Clock, Eye, CheckCircle } from 'lucide-react';
 import { fetchRecurringInvoices, upsertRecurringInvoice, type RecurringInvoiceRecord } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
+import { catchAndReport } from '../lib/toast';
 
 export default function RecurringInvoices() {
   const [invoices, setInvoices] = useState<RecurringInvoiceRecord[]>([]);
@@ -37,7 +38,7 @@ export default function RecurringInvoices() {
     setInvoices(prev => {
       const updated = prev.map(i => i.id === id ? { ...i, status: 'paid' as const } : i);
       const paidInv = updated.find(i => i.id === id);
-      if (paidInv) upsertRecurringInvoice(paidInv).catch(() => {});
+      if (paidInv) upsertRecurringInvoice(paidInv).catch(catchAndReport('Mark recurring invoice paid'));
       return updated;
     });
   };
