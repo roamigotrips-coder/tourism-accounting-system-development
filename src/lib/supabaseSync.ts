@@ -72,9 +72,9 @@ function accountToDb(a: Account) {
   };
 }
 
-export async function fetchAccounts(): Promise<Account[] | null> {
+export async function fetchAccounts(): Promise<Account[]> {
   const { data, error } = await supabase.from('accounts').select('*').order('code');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToAccount);
 }
 
@@ -179,7 +179,7 @@ function lineToDb(line: JournalLine, jeId: string) {
   };
 }
 
-export async function fetchJournalEntries(): Promise<JournalEntry[] | null> {
+export async function fetchJournalEntries(): Promise<JournalEntry[]> {
   const [{ data: entries, error: e1 }, { data: lines, error: e2 }] = await Promise.all([
     supabase.from('journal_entries').select('*').order('date'),
     supabase.from('journal_entry_lines').select('*'),
@@ -233,9 +233,9 @@ function periodToDb(p: AccountingPeriod) {
   };
 }
 
-export async function fetchPeriods(): Promise<AccountingPeriod[] | null> {
+export async function fetchPeriods(): Promise<AccountingPeriod[]> {
   const { data, error } = await supabase.from('accounting_periods').select('*').order('period');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToPeriod);
 }
 
@@ -343,10 +343,10 @@ function estimateToDb(e: BookingEstimate) {
   };
 }
 
-export async function fetchEstimates(): Promise<BookingEstimate[] | null> {
+export async function fetchEstimates(): Promise<BookingEstimate[]> {
   const { data, error } = await supabase.from('booking_estimates').select('*').order('submitted_at', { ascending: false });
-  if (error || !data) return null;
-  return data.map(dbToEstimate);
+  if (error) throw error;
+  return (data || []).map(dbToEstimate);
 }
 
 export async function upsertEstimate(e: BookingEstimate): Promise<void> {
@@ -465,7 +465,7 @@ function approvalHistoryToDb(h: ApprovalHistoryEvent, itemId: string) {
   };
 }
 
-export async function fetchApprovalItems(): Promise<ApprovalItem[] | null> {
+export async function fetchApprovalItems(): Promise<ApprovalItem[]> {
   const [{ data: items, error: e1 }, { data: history, error: e2 }] = await Promise.all([
     supabase.from('approval_items').select('*').order('submitted_at', { ascending: false }),
     supabase.from('approval_history').select('*').order('timestamp'),
@@ -521,9 +521,9 @@ function approvalRuleToDb(r: ApprovalRule) {
   };
 }
 
-export async function fetchApprovalRules(): Promise<ApprovalRule[] | null> {
+export async function fetchApprovalRules(): Promise<ApprovalRule[]> {
   const { data, error } = await supabase.from('approval_rules').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToApprovalRule);
 }
 
@@ -596,9 +596,9 @@ function auditLogToDb(log: AuditLog) {
   };
 }
 
-export async function fetchAuditLogs(): Promise<AuditLog[] | null> {
+export async function fetchAuditLogs(): Promise<AuditLog[]> {
   const { data, error } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(500);
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToAuditLog);
 }
 
@@ -668,9 +668,9 @@ function bankConnectionToDb(c: BankConnection) {
   };
 }
 
-export async function fetchBankConnections(): Promise<BankConnection[] | null> {
+export async function fetchBankConnections(): Promise<BankConnection[]> {
   const { data, error } = await supabase.from('bank_connections').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToBankConnection);
 }
 
@@ -739,9 +739,9 @@ function feedTransactionToDb(t: FeedTransaction) {
   };
 }
 
-export async function fetchFeedTransactions(): Promise<FeedTransaction[] | null> {
+export async function fetchFeedTransactions(): Promise<FeedTransaction[]> {
   const { data, error } = await supabase.from('feed_transactions').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToFeedTransaction);
 }
 
@@ -784,9 +784,9 @@ function bookTxToDb(t: BookTx) {
   };
 }
 
-export async function fetchBookTransactions(): Promise<BookTx[] | null> {
+export async function fetchBookTransactions(): Promise<BookTx[]> {
   const { data, error } = await supabase.from('book_transactions').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToBookTx);
 }
 
@@ -827,9 +827,9 @@ function recMatchToDb(m: RecMatch) {
   };
 }
 
-export async function fetchRecMatches(): Promise<RecMatch[] | null> {
+export async function fetchRecMatches(): Promise<RecMatch[]> {
   const { data, error } = await supabase.from('rec_matches').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToRecMatch);
 }
 
@@ -852,9 +852,9 @@ export async function insertSyncLog(log: any): Promise<void> {
   }));
 }
 
-export async function fetchFeedSchedules(): Promise<FeedSchedule[] | null> {
+export async function fetchFeedSchedules(): Promise<FeedSchedule[]> {
   const { data, error } = await supabase.from('feed_schedules').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({
     connectionId: row.connection_id,
     frequency:    row.frequency,
@@ -878,9 +878,9 @@ export async function upsertFeedSchedule(s: FeedSchedule): Promise<void> {
   }, { onConflict: 'connection_id' }));
 }
 
-export async function fetchWebhookEvents(): Promise<WebhookEvent[] | null> {
+export async function fetchWebhookEvents(): Promise<WebhookEvent[]> {
   const { data, error } = await supabase.from('webhook_events').select('*').order('received_at', { ascending: false }).limit(100);
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({
     id:           row.id,
     type:         row.type,
@@ -908,9 +908,9 @@ export async function insertWebhookEvent(e: WebhookEvent): Promise<void> {
 
 import type { Currency, CurrencyRate } from '../context/CurrencyContext';
 
-export async function fetchCurrencies(): Promise<Currency[] | null> {
+export async function fetchCurrencies(): Promise<Currency[]> {
   const { data, error } = await supabase.from('currencies').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ code: row.code, symbol: row.symbol, name: row.name, enabled: row.enabled }));
 }
 
@@ -919,9 +919,9 @@ export async function upsertCurrencies(currencies: Currency[]): Promise<void> {
   await sbThrow(supabase.from('currencies').upsert(currencies.map(c => ({ code: c.code, symbol: c.symbol, name: c.name, enabled: c.enabled })), { onConflict: 'code' }));
 }
 
-export async function fetchCurrencyRates(): Promise<CurrencyRate[] | null> {
+export async function fetchCurrencyRates(): Promise<CurrencyRate[]> {
   const { data, error } = await supabase.from('currency_rates').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ code: row.code, rate: Number(row.rate), date: row.date, source: row.source ?? 'Manual' }));
 }
 
@@ -945,9 +945,9 @@ export async function saveSetting(key: string, value: string): Promise<void> {
 
 import type { Workflow } from '../context/AutomationContext';
 
-export async function fetchWorkflows(): Promise<Workflow[] | null> {
+export async function fetchWorkflows(): Promise<Workflow[]> {
   const { data, error } = await supabase.from('workflows').select('*').order('created_at', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ id: row.id, name: row.name, description: row.description ?? undefined, enabled: row.enabled, trigger: row.trigger, conditions: row.conditions ?? [], actions: row.actions ?? [], createdAt: row.created_at }));
 }
 
@@ -964,9 +964,9 @@ export async function deleteWorkflowDb(id: string): Promise<void> {
   await sbThrow(supabase.from('workflows').delete().eq('id', id));
 }
 
-export async function fetchAutomationLogs(): Promise<{ id: string; time: string; message: string }[] | null> {
+export async function fetchAutomationLogs(): Promise<{ id: string; time: string; message: string }[]> {
   const { data, error } = await supabase.from('automation_logs').select('*').order('time', { ascending: false }).limit(200);
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ id: row.id, time: row.time, message: row.message }));
 }
 
@@ -1017,7 +1017,7 @@ function attachmentToDb(a: Attachment) {
   };
 }
 
-export async function fetchAttachments(): Promise<Attachment[] | null> {
+export async function fetchAttachments(): Promise<Attachment[]> {
   const [{ data: atts, error: e1 }, { data: notes, error: e2 }] = await Promise.all([
     supabase.from('attachments').select('*').order('uploaded_at', { ascending: false }),
     supabase.from('attachment_notes').select('*'),
@@ -1051,9 +1051,9 @@ function emailRouteToDb(r: EmailInRoute) {
   return { id: r.id, address: r.address, name: r.name, route_to: r.routeTo, auto_link: r.autoLink, enabled: r.enabled };
 }
 
-export async function fetchEmailRoutes(): Promise<EmailInRoute[] | null> {
+export async function fetchEmailRoutes(): Promise<EmailInRoute[]> {
   const { data, error } = await supabase.from('email_routes').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToEmailRoute);
 }
 
@@ -1076,9 +1076,9 @@ export async function deleteEmailRouteDb(id: string): Promise<void> {
 
 import type { RolePreset } from '../context/PresetsContext';
 
-export async function fetchRolePresets(): Promise<RolePreset[] | null> {
+export async function fetchRolePresets(): Promise<RolePreset[]> {
   const { data, error } = await supabase.from('role_presets').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ id: row.id, name: row.name, emoji: row.emoji, description: row.description, color: row.color, permissions: row.permissions ?? {}, isSystem: row.is_system }));
 }
 
@@ -1101,9 +1101,9 @@ export async function deleteRolePresetDb(id: string): Promise<void> {
 
 import type { FormConfiguration } from '../types/formBuilder';
 
-export async function fetchFormConfigurations(): Promise<FormConfiguration[] | null> {
+export async function fetchFormConfigurations(): Promise<FormConfiguration[]> {
   const { data, error } = await supabase.from('form_configurations').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map((row: any) => ({ formId: row.form_id, formName: row.form_name, formDescription: row.form_description ?? undefined, module: row.module, fields: row.fields ?? [] }));
 }
 
@@ -1163,9 +1163,9 @@ function agentToDb(a: Agent) {
   };
 }
 
-export async function fetchAgents(): Promise<Agent[] | null> {
+export async function fetchAgents(): Promise<Agent[]> {
   const { data, error } = await supabase.from('agents').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToAgent);
 }
 
@@ -1210,9 +1210,9 @@ function supplierToDb(s: Supplier) {
   };
 }
 
-export async function fetchSuppliers(): Promise<Supplier[] | null> {
+export async function fetchSuppliers(): Promise<Supplier[]> {
   const { data, error } = await supabase.from('suppliers').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToSupplier);
 }
 
@@ -1257,9 +1257,9 @@ function expenseToDb(e: Expense) {
   };
 }
 
-export async function fetchExpenses(): Promise<Expense[] | null> {
+export async function fetchExpenses(): Promise<Expense[]> {
   const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToExpense);
 }
 
@@ -1308,9 +1308,9 @@ function invoiceToDb(inv: Invoice) {
   };
 }
 
-export async function fetchInvoices(): Promise<Invoice[] | null> {
+export async function fetchInvoices(): Promise<Invoice[]> {
   const { data, error } = await supabase.from('invoices').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToInvoice);
 }
 
@@ -1355,9 +1355,9 @@ function vehicleToDb(v: Vehicle) {
   };
 }
 
-export async function fetchVehicles(): Promise<Vehicle[] | null> {
+export async function fetchVehicles(): Promise<Vehicle[]> {
   const { data, error } = await supabase.from('vehicles').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToVehicle);
 }
 
@@ -1406,9 +1406,9 @@ function tourPackageToDb(tp: TourPackage) {
   };
 }
 
-export async function fetchTourPackages(): Promise<TourPackage[] | null> {
+export async function fetchTourPackages(): Promise<TourPackage[]> {
   const { data, error } = await supabase.from('tour_packages').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToTourPackage);
 }
 
@@ -1449,9 +1449,9 @@ function vatRecordToDb(v: VATRecord & { id?: string }) {
   };
 }
 
-export async function fetchVATRecords(): Promise<(VATRecord & { id?: string })[] | null> {
+export async function fetchVATRecords(): Promise<(VATRecord & { id?: string })[]> {
   const { data, error } = await supabase.from('vat_records').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToVATRecord);
 }
 
@@ -1500,9 +1500,9 @@ function leadToDb(l: Lead) {
   };
 }
 
-export async function fetchLeads(): Promise<Lead[] | null> {
+export async function fetchLeads(): Promise<Lead[]> {
   const { data, error } = await supabase.from('leads').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToLead);
 }
 
@@ -1547,9 +1547,9 @@ function employeeToDb(e: Employee) {
   };
 }
 
-export async function fetchEmployees(): Promise<Employee[] | null> {
+export async function fetchEmployees(): Promise<Employee[]> {
   const { data, error } = await supabase.from('employees').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToEmployee);
 }
 
@@ -1590,9 +1590,9 @@ function bankAccountToDb(b: BankAccount) {
   };
 }
 
-export async function fetchBankCashAccounts(): Promise<BankAccount[] | null> {
+export async function fetchBankCashAccounts(): Promise<BankAccount[]> {
   const { data, error } = await supabase.from('bank_cash_accounts').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToBankAccount);
 }
 
@@ -1637,9 +1637,9 @@ function paymentToDb(p: Payment) {
   };
 }
 
-export async function fetchPayments(): Promise<Payment[] | null> {
+export async function fetchPayments(): Promise<Payment[]> {
   const { data, error } = await supabase.from('payments_register').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToPayment);
 }
 
@@ -1706,9 +1706,9 @@ function projectToDb(p: Project) {
   };
 }
 
-export async function fetchProjects(): Promise<Project[] | null> {
+export async function fetchProjects(): Promise<Project[]> {
   const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToProject);
 }
 
@@ -1749,9 +1749,9 @@ function timeEntryToDb(t: TimeEntry) {
   };
 }
 
-export async function fetchTimeEntries(): Promise<TimeEntry[] | null> {
+export async function fetchTimeEntries(): Promise<TimeEntry[]> {
   const { data, error } = await supabase.from('time_entries').select('*').order('date', { ascending: false });
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToTimeEntry);
 }
 
@@ -1815,9 +1815,9 @@ function retainerToDb(r: Retainer) {
   };
 }
 
-export async function fetchRetainers(): Promise<Retainer[] | null> {
+export async function fetchRetainers(): Promise<Retainer[]> {
   const { data, error } = await supabase.from('retainers').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToRetainer);
 }
 
@@ -1887,7 +1887,7 @@ function dbToPurchaseOrder(row: any, items: any[]): PurchaseOrder {
   };
 }
 
-export async function fetchPurchaseOrders(): Promise<PurchaseOrder[] | null> {
+export async function fetchPurchaseOrders(): Promise<PurchaseOrder[]> {
   const [{ data: orders, error: e1 }, { data: items }] = await Promise.all([
     supabase.from('purchase_orders').select('*'),
     supabase.from('purchase_order_items').select('*'),
@@ -1958,9 +1958,9 @@ function recurringBillingToDb(r: RecurringBillingEntry) {
   };
 }
 
-export async function fetchRecurringBilling(): Promise<RecurringBillingEntry[] | null> {
+export async function fetchRecurringBilling(): Promise<RecurringBillingEntry[]> {
   const { data, error } = await supabase.from('recurring_billing').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToRecurringBilling);
 }
 
@@ -2016,9 +2016,9 @@ function recurringProfileToDb(r: RecurringProfile) {
   };
 }
 
-export async function fetchRecurringProfiles(): Promise<RecurringProfile[] | null> {
+export async function fetchRecurringProfiles(): Promise<RecurringProfile[]> {
   const { data, error } = await supabase.from('recurring_profiles').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToRecurringProfile);
 }
 
@@ -2067,9 +2067,9 @@ function recurringInvoiceToDb(r: RecurringInvoiceRecord) {
   };
 }
 
-export async function fetchRecurringInvoices(): Promise<RecurringInvoiceRecord[] | null> {
+export async function fetchRecurringInvoices(): Promise<RecurringInvoiceRecord[]> {
   const { data, error } = await supabase.from('recurring_invoices').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToRecurringInvoice);
 }
 
@@ -2120,9 +2120,9 @@ function inventoryItemToDb(i: InventoryItem) {
   };
 }
 
-export async function fetchInventoryItems(): Promise<InventoryItem[] | null> {
+export async function fetchInventoryItems(): Promise<InventoryItem[]> {
   const { data, error } = await supabase.from('inventory_items').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToInventoryItem);
 }
 
@@ -2186,9 +2186,9 @@ function fixedAssetToDb(a: FixedAsset) {
   };
 }
 
-export async function fetchFixedAssets(): Promise<FixedAsset[] | null> {
+export async function fetchFixedAssets(): Promise<FixedAsset[]> {
   const { data, error } = await supabase.from('fixed_assets').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToFixedAsset);
 }
 
@@ -2236,9 +2236,9 @@ function currencyPostingDocToDb(d: CurrencyPostingDoc) {
   };
 }
 
-export async function fetchCurrencyPostingDocs(): Promise<CurrencyPostingDoc[] | null> {
+export async function fetchCurrencyPostingDocs(): Promise<CurrencyPostingDoc[]> {
   const { data, error } = await supabase.from('currency_posting_docs').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToCurrencyPostingDoc);
 }
 
@@ -2268,9 +2268,9 @@ function dbToSupplierAutomationRule(row: any): SupplierAutomationRule {
   };
 }
 
-export async function fetchSupplierAutomationRules(): Promise<SupplierAutomationRule[] | null> {
+export async function fetchSupplierAutomationRules(): Promise<SupplierAutomationRule[]> {
   const { data, error } = await supabase.from('supplier_automation_rules').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToSupplierAutomationRule);
 }
 
@@ -2299,9 +2299,9 @@ function dbToSupplierPendingInvoice(row: any): SupplierPendingInvoice {
   };
 }
 
-export async function fetchSupplierPendingInvoices(): Promise<SupplierPendingInvoice[] | null> {
+export async function fetchSupplierPendingInvoices(): Promise<SupplierPendingInvoice[]> {
   const { data, error } = await supabase.from('supplier_pending_invoices').select('*');
-  if (error || !data) return null;
+  if (error) throw error; if (!data) return [];
   return data.map(dbToSupplierPendingInvoice);
 }
 
@@ -2372,9 +2372,9 @@ function dbToQuoteItem(row: any): QuoteItem {
   };
 }
 
-export async function fetchQuotes(): Promise<Quote[] | null> {
+export async function fetchQuotes(): Promise<Quote[]> {
   const { data: rows, error } = await supabase.from('quotes').select('*').order('created_at', { ascending: false });
-  if (error || !rows) return null;
+  if (error) throw error; if (!rows) return [];
   const { data: itemRows } = await supabase.from('quote_items').select('*');
   const allItems = (itemRows ?? []).map(dbToQuoteItem);
   return rows.map(r => dbToQuote(r, allItems.filter(i => i.quoteId === r.id)));
@@ -2455,9 +2455,9 @@ function dbToSalesOrderItem(row: any): SalesOrderItem {
   };
 }
 
-export async function fetchSalesOrders(): Promise<SalesOrder[] | null> {
+export async function fetchSalesOrders(): Promise<SalesOrder[]> {
   const { data: rows, error } = await supabase.from('sales_orders').select('*').order('created_at', { ascending: false });
-  if (error || !rows) return null;
+  if (error) throw error; if (!rows) return [];
   const { data: itemRows } = await supabase.from('sales_order_items').select('*');
   const allItems = (itemRows ?? []).map(dbToSalesOrderItem);
   return rows.map(r => dbToSalesOrder(r, allItems.filter(i => i.salesOrderId === r.id)));
@@ -2532,9 +2532,9 @@ function dbToCreditNoteItem(row: any): CreditNoteItem {
   };
 }
 
-export async function fetchCreditNotes(): Promise<CreditNote[] | null> {
+export async function fetchCreditNotes(): Promise<CreditNote[]> {
   const { data: rows, error } = await supabase.from('credit_notes').select('*').order('created_at', { ascending: false });
-  if (error || !rows) return null;
+  if (error) throw error; if (!rows) return [];
   const { data: itemRows } = await supabase.from('credit_note_items').select('*');
   const allItems = (itemRows ?? []).map(dbToCreditNoteItem);
   return rows.map(r => dbToCreditNote(r, allItems.filter(i => i.creditNoteId === r.id)));
@@ -2616,9 +2616,9 @@ function dbToBillItem(row: any): BillItem {
   };
 }
 
-export async function fetchBills(): Promise<Bill[] | null> {
+export async function fetchBills(): Promise<Bill[]> {
   const { data: rows, error } = await supabase.from('bills').select('*').order('created_at', { ascending: false });
-  if (error || !rows) return null;
+  if (error) throw error; if (!rows) return [];
   const { data: itemRows } = await supabase.from('bill_items').select('*');
   const allItems = (itemRows ?? []).map(dbToBillItem);
   return rows.map(r => dbToBill(r, allItems.filter(i => i.billId === r.id)));

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { Booking } from '../data/mockData';
-import { fetchEstimates, upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
+import { upsertEstimate as upsertEstimateDb } from '../lib/supabaseSync';
 import { LoadingSpinner, ErrorBanner } from '../components/LoadingState';
 import RecordPaymentModal, { type RecordPaymentConfig, type PaymentRecord } from '../components/RecordPaymentModal';
 import { useBookingEstimates, type BookingEstimate } from '../context/BookingEstimateContext';
@@ -147,7 +147,7 @@ function isCostingValid(form: BookingForm): { valid: boolean; errors: string[] }
 import { useAutomation } from '../context/AutomationContext';
 
 export default function Sales() {
-  const { addEstimate, estimates } = useBookingEstimates();
+  const { addEstimate, estimates, loading, error } = useBookingEstimates();
   const { publish } = useAutomation();
   const { logAction } = useAuditTrail();
   const [sentToFinance, setSentToFinance] = useState(false);
@@ -157,8 +157,6 @@ export default function Sales() {
   const [activeTab, setActiveTab] = useState<'manual' | 'upload'>('manual');
   const [form, setForm] = useState<BookingForm>(emptyForm);
   const [bookingList, setBookingList] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [viewBooking, setViewBooking] = useState<Booking | null>(null);
   const [paymentConfig, setPaymentConfig] = useState<RecordPaymentConfig | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentRecord[]>>({});
@@ -173,33 +171,23 @@ export default function Sales() {
   const [uploadError, setUploadError] = useState('');
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
 
+  // Derive bookingList from context estimates (loaded from Supabase)
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await fetchEstimates();
-        if (!cancelled && data) {
-          const mapped: Booking[] = data.map(est => ({
-            id: est.bookingRef,
-            agent: est.agent,
-            customer: est.customer,
-            serviceType: est.serviceType,
-            serviceDate: est.serviceDate,
-            sellingPrice: est.sellingPrice,
-            vat: est.vat,
-            currency: est.currency,
-            paymentStatus: (est.paymentStatus as 'Paid' | 'Pending' | 'Partial') || 'Pending',
-          }));
-          setBookingList(mapped);
-        }
-      } catch (e: any) {
-        if (!cancelled) setError(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    if (!loading && estimates.length > 0) {
+      const mapped: Booking[] = estimates.map(est => ({
+        id: est.bookingRef,
+        agent: est.agent,
+        customer: est.customer,
+        serviceType: est.serviceType,
+        serviceDate: est.serviceDate,
+        sellingPrice: est.sellingPrice,
+        vat: est.vat,
+        currency: est.currency,
+        paymentStatus: (est.paymentStatus as 'Paid' | 'Pending' | 'Partial') || 'Pending',
+      }));
+      setBookingList(mapped);
+    }
+  }, [estimates, loading]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const costingFileRef = useRef<HTMLInputElement>(null);
